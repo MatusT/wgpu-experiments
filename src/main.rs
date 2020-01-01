@@ -1,6 +1,6 @@
 mod application;
-mod utils;
 mod pipelines;
+mod utils;
 
 use utils::ApplicationSkeleton;
 

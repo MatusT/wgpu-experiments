@@ -1,11 +1,11 @@
 use crate::utils::{load_glsl, ShaderStage};
 use wgpu;
-pub struct TrianglePipeline {
+pub struct TrianglesPipeline {
     pub pipeline: wgpu::RenderPipeline,
     pub bind_group_layout: wgpu::BindGroupLayout,
 }
 
-impl TrianglePipeline {
+impl TrianglesPipeline {
     pub fn new(device: &wgpu::Device) -> Self {
         // Shaders
         let vs_bytes = load_glsl(include_str!("triangle.vert"), ShaderStage::Vertex);
@@ -47,7 +47,15 @@ impl TrianglePipeline {
             }],
             depth_stencil_state: None,
             index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &[],
+            vertex_buffers: &[wgpu::VertexBufferDescriptor {
+                stride: 8,
+                step_mode: wgpu::InputStepMode::Vertex,
+                attributes: &[wgpu::VertexAttributeDescriptor {
+                    offset: 0,
+                    format: wgpu::VertexFormat::Float2,
+                    shader_location: 0,
+                }],
+            }],
             sample_count: 1,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,

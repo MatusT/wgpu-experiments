@@ -10,3 +10,13 @@ edition = "2018"
 wgpu = { git = "https://github.com/gfx-rs/wgpu-rs" }
 winit = "0.20.0-alpha5"
 glsl-to-spirv = "0.1"
+rand = "0.7"
+zerocopy = "0.2"
+rayon = "1.1"
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "sort"
+harness = false
