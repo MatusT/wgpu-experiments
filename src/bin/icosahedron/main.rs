@@ -19,7 +19,7 @@ fn main() {
         (window, size, surface)
     };
 
-    let mut application = application::Application::new();
+    let mut application = application::Application::new(size.width, size.height);
 
     let mut sc_desc = wgpu::SwapChainDescriptor {
         usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,

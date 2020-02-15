@@ -11,6 +11,9 @@ use winit::event::WindowEvent;
 use zerocopy::AsBytes;
 
 pub struct Application {
+    width: u32,
+    height: u32,
+
     device: wgpu::Device,
     queue: wgpu::Queue,
 
@@ -26,7 +29,7 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn new() -> Self {
+    pub fn new(width: u32, height: u32) -> Self {
         let adapter = wgpu::Adapter::request(
             &wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::Default,
@@ -60,7 +63,7 @@ impl Application {
             projection: projection.as_slice().try_into().expect("slice with incorrect length"),
             view: projection.as_slice().try_into().expect("slice with incorrect length"),
         };
-        let camera_buffer = device.create_buffer_with_data(camera.as_bytes(), wgpu::BufferUsage::UNIFORM);
+        let camera_buffer = device.create_buffer_with_data(camera.as_bytes(), wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST);
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &pipeline.bind_group_layout,
@@ -74,6 +77,9 @@ impl Application {
         });
 
         Self {
+            width,
+            height,
+
             device,
             queue,
 
@@ -100,7 +106,30 @@ impl ApplicationSkeleton for Application {
     }
 
     fn render(&mut self, frame: &wgpu::TextureView) {
+        let aspect = self.width as f32 / self.height as f32;
+        let fovy = 0.785398163;
+        let near = 1.0;
+        let far = 10.0;
+        self.camera.projection = glm::perspective(aspect, fovy, near, far)
+            .as_slice()
+            .try_into()
+            .expect("slice with incorrect length");
+        self.camera.view = glm::look_at(&glm::vec3(0.0, 0.0, -5.0), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0))
+            .as_slice()
+            .try_into()
+            .expect("slice with incorrect length");
+
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+        {
+            let size = std::mem::size_of::<Camera>();
+            let camera_buffer = self.device.create_buffer_mapped(size, wgpu::BufferUsage::COPY_SRC);
+            camera_buffer.data.copy_from_slice(&mut self.camera.as_bytes());
+            let camera_buffer = camera_buffer.finish();
+
+            encoder.copy_buffer_to_buffer(&camera_buffer, 0, &self.camera_buffer, 0, size as wgpu::BufferAddress);
+        }
+
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
