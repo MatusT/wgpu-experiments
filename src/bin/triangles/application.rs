@@ -1,5 +1,6 @@
-use crate::pipelines::{triangle::TrianglePipeline, triangles::TrianglesPipeline};
-use crate::utils;
+use wgpu_experiments::pipelines::triangles::TrianglesPipeline;
+use wgpu_experiments::ApplicationSkeleton;
+
 use rand::Rng;
 use std::f32::consts::PI;
 use wgpu;
@@ -9,9 +10,6 @@ use zerocopy::AsBytes;
 pub struct Application {
     device: wgpu::Device,
     queue: wgpu::Queue,
-
-    triangle_pipeline: TrianglePipeline,
-    triangle_bind_group: wgpu::BindGroup,
 
     triangles_pipeline: TrianglesPipeline,
     triangles_bind_group: wgpu::BindGroup,
@@ -29,17 +27,11 @@ impl Application {
         )
         .unwrap();
 
-        let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
+        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
             extensions: wgpu::Extensions {
                 anisotropic_filtering: false,
             },
             limits: wgpu::Limits::default(),
-        });
-
-        let triangle_pipeline = TrianglePipeline::new(&device);
-        let triangle_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &triangle_pipeline.bind_group_layout,
-            bindings: &[],
         });
 
         let triangles_pipeline = TrianglesPipeline::new(&device);
@@ -52,10 +44,10 @@ impl Application {
         let mut rng = rand::thread_rng();
         //let ts = [(5.0 / 4.0) * PI, (7.0 / 4.0) * PI, (1.0 / 2.0) * PI];
         let ts = [0.0, (1.0 / 2.0) * PI, PI];
-        let count = 10000000;
+        let count = 1_000_000;
         let mut vertices: Vec<f32> = Vec::with_capacity(3 * 2 * count);
         for _ in 0..count {
-            let radius = 0.01f32;
+            let radius = 0.03f32;
             let center_x = rng.gen_range(-1.0f32, 1.0);
             let center_y = rng.gen_range(-1.0f32, 1.0);
 
@@ -73,9 +65,6 @@ impl Application {
             device,
             queue,
 
-            triangle_pipeline,
-            triangle_bind_group,
-
             triangles_pipeline,
             triangles_bind_group,
 
@@ -84,12 +73,12 @@ impl Application {
     }
 }
 
-impl utils::ApplicationSkeleton for Application {
-    fn resize(&mut self, width: u32, height: u32) {
+impl ApplicationSkeleton for Application {
+    fn resize(&mut self, _: u32, _: u32) {
         //
     }
 
-    fn update(&mut self, event: WindowEvent) {
+    fn update(&mut self, _: WindowEvent) {
         //
     }
 
@@ -109,7 +98,7 @@ impl utils::ApplicationSkeleton for Application {
             rpass.set_pipeline(&self.triangles_pipeline.pipeline);
             rpass.set_bind_group(0, &self.triangles_bind_group, &[]);
             rpass.set_vertex_buffers(0, &[(&self.triangles_buffer, 0)]);
-            rpass.draw(0..3 * 10000000, 0..1);
+            rpass.draw(0..3 * 1_000_000, 0..1);
         }
 
         self.queue.submit(&[encoder.finish()]);

@@ -1,3 +1,5 @@
+pub mod pipelines;
+
 use winit::event::WindowEvent;
 pub enum ShaderStage {
     Vertex,

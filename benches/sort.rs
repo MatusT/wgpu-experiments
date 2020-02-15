@@ -34,6 +34,5 @@ pub fn par_sort_benchmark(c: &mut Criterion) {
     group.finish();
 }
 
-
 criterion_group!(benches, sort_benchmark, par_sort_benchmark);
 criterion_main!(benches);

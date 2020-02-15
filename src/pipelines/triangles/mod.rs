@@ -1,4 +1,4 @@
-use crate::utils::{load_glsl, ShaderStage};
+use crate::{load_glsl, ShaderStage};
 use wgpu;
 pub struct TrianglesPipeline {
     pub pipeline: wgpu::RenderPipeline,
