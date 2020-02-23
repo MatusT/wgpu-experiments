@@ -3,6 +3,7 @@
 layout(binding = 0, std140) uniform CameraMatrices {
   mat4 projection;
   mat4 view;
+  mat4 projection_view;
 };
 
 layout(location = 0) in vec3 in_position;

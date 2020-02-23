@@ -1,6 +1,7 @@
+pub mod camera;
 pub mod pipelines;
 
-use winit::event::WindowEvent;
+use winit;
 pub enum ShaderStage {
     Vertex,
     Fragment,
@@ -17,10 +18,15 @@ pub fn load_glsl(code: &str, stage: ShaderStage) -> Vec<u32> {
     wgpu::read_spirv(glsl_to_spirv::compile(&code, ty).unwrap()).unwrap()
 }
 
-pub trait ApplicationSkeleton {
+pub enum ApplicationEvent<'a> {
+    DeviceEvent(winit::event::DeviceEvent),
+    WindowEvent(winit::event::WindowEvent<'a>),
+}
+
+pub trait ApplicationSkeleton<'a> {
     fn resize(&mut self, width: u32, height: u32);
 
-    fn update(&mut self, event: WindowEvent);
+    fn update(&mut self, event: ApplicationEvent<'a>);
 
     fn render(&mut self, frame: &wgpu::TextureView);
 

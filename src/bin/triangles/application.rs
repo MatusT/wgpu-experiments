@@ -1,5 +1,5 @@
 use wgpu_experiments::pipelines::triangles::TrianglesPipeline;
-use wgpu_experiments::ApplicationSkeleton;
+use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
 
 use rand::Rng;
 use std::f32::consts::PI;
@@ -73,12 +73,12 @@ impl Application {
     }
 }
 
-impl ApplicationSkeleton for Application {
+impl<'a> ApplicationSkeleton<'a> for Application {
     fn resize(&mut self, _: u32, _: u32) {
         //
     }
 
-    fn update(&mut self, _: WindowEvent) {
+    fn update(&mut self, event: ApplicationEvent<'a>) {
         //
     }
 

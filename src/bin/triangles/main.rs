@@ -57,9 +57,7 @@ fn main() {
                 | WindowEvent::CloseRequested => {
                     *control_flow = ControlFlow::Exit;
                 }
-                _ => {
-                    application.update(event);
-                }
+                _ => {}
             },
             event::Event::RedrawRequested(_) => {
                 let frame = swap_chain

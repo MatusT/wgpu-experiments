@@ -1,15 +1,5 @@
 use crate::{load_glsl, ShaderStage};
 use wgpu;
-use nalgebra_glm as glm;
-use safe_transmute::TriviallyTransmutable;
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct Camera {
-    pub projection: glm::Mat4,
-    pub view: glm::Mat4,
-}
-
-unsafe impl TriviallyTransmutable for Camera {}
 pub struct MeshPipeline {
     pub pipeline: wgpu::RenderPipeline,
     pub bind_group_layout: wgpu::BindGroupLayout,

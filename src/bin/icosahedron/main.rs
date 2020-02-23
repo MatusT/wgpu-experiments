@@ -1,10 +1,11 @@
 mod application;
 
-use wgpu_experiments::ApplicationSkeleton;
+use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
 
 fn main() {
     use winit::{
         event,
+        event::DeviceEvent,
         event::WindowEvent,
         event_loop::{ControlFlow, EventLoop},
     };
@@ -44,29 +45,33 @@ fn main() {
 
                 application.resize(sc_desc.width, sc_desc.height);
             }
-            event::Event::WindowEvent { event, .. } => match event {
-                WindowEvent::KeyboardInput {
-                    input:
-                        event::KeyboardInput {
-                            virtual_keycode: Some(event::VirtualKeyCode::Escape),
-                            state: event::ElementState::Pressed,
-                            ..
-                        },
-                    ..
-                }
-                | WindowEvent::CloseRequested => {
-                    *control_flow = ControlFlow::Exit;
-                }
-                _ => {
-                    application.update(event);
-                }
-            },
+            event::Event::WindowEvent { event, .. } => {
+                match event {
+                    WindowEvent::KeyboardInput {
+                        input:
+                            event::KeyboardInput {
+                                virtual_keycode: Some(event::VirtualKeyCode::Escape),
+                                state: event::ElementState::Pressed,
+                                ..
+                            },
+                        ..
+                    }
+                    | WindowEvent::CloseRequested => {
+                        *control_flow = ControlFlow::Exit;
+                    }
+                    _ => {}
+                };
+                application.update(ApplicationEvent::WindowEvent(event));
+            }
             event::Event::RedrawRequested(_) => {
                 let frame = swap_chain
                     .get_next_texture()
                     .expect("Timeout when acquiring next swap chain texture");
 
                 application.render(&frame.view);
+            }
+            event::Event::DeviceEvent { event, .. } => {
+                application.update(ApplicationEvent::DeviceEvent(event));
             }
             _ => {}
         }
