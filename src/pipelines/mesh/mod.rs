@@ -15,11 +15,21 @@ impl MeshPipeline {
 
         // Bind Groups
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            bindings: &[wgpu::BindGroupLayoutBinding {
-                binding: 0,
-                visibility: wgpu::ShaderStage::VERTEX,
-                ty: wgpu::BindingType::UniformBuffer { dynamic: false },
-            }],
+            bindings: &[
+                wgpu::BindGroupLayoutBinding {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                },
+                wgpu::BindGroupLayoutBinding {
+                    binding: 1,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::StorageBuffer {
+                        dynamic: false,
+                        readonly: true,
+                    },
+                },
+            ],
         });
 
         // Pipeline
@@ -38,8 +48,8 @@ impl MeshPipeline {
                 entry_point: "main",
             }),
             rasterization_state: Some(wgpu::RasterizationStateDescriptor {
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: wgpu::CullMode::Back,
+                front_face: wgpu::FrontFace::Cw,
+                cull_mode: wgpu::CullMode::None,
                 depth_bias: 0,
                 depth_bias_slope_scale: 0.0,
                 depth_bias_clamp: 0.0,
@@ -51,18 +61,37 @@ impl MeshPipeline {
                 alpha_blend: wgpu::BlendDescriptor::REPLACE,
                 write_mask: wgpu::ColorWrite::ALL,
             }],
-            depth_stencil_state: None,
+            depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Greater,
+                stencil_front: wgpu::StencilStateFaceDescriptor::IGNORE,
+                stencil_back: wgpu::StencilStateFaceDescriptor::IGNORE,
+                stencil_read_mask: 0,
+                stencil_write_mask: 0,
+            }),
             index_format: wgpu::IndexFormat::Uint16,
-            vertex_buffers: &[wgpu::VertexBufferDescriptor {
-                stride: 12,
-                step_mode: wgpu::InputStepMode::Vertex,
-                attributes: &[wgpu::VertexAttributeDescriptor {
-                    offset: 0,
-                    format: wgpu::VertexFormat::Float3,
-                    shader_location: 0,
-                }],
-            }],
-            sample_count: 1,
+            vertex_buffers: &[
+                wgpu::VertexBufferDescriptor {
+                    stride: 12,
+                    step_mode: wgpu::InputStepMode::Vertex,
+                    attributes: &[wgpu::VertexAttributeDescriptor {
+                        offset: 0,
+                        format: wgpu::VertexFormat::Float3,
+                        shader_location: 0,
+                    }],
+                },
+                wgpu::VertexBufferDescriptor {
+                    stride: 12,
+                    step_mode: wgpu::InputStepMode::Vertex,
+                    attributes: &[wgpu::VertexAttributeDescriptor {
+                        offset: 0,
+                        format: wgpu::VertexFormat::Float3,
+                        shader_location: 1,
+                    }],
+                },
+            ],
+            sample_count: 4,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
         });

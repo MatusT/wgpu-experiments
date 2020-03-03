@@ -1,7 +1,7 @@
 use crate::ApplicationEvent;
 use nalgebra_glm as glm;
 use safe_transmute::TriviallyTransmutable;
-use winit::{event, event::DeviceEvent, event::WindowEvent};
+use winit;
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct CameraUbo {
@@ -66,32 +66,27 @@ impl Camera for RotationCamera {
 
     fn update<'a>(&mut self, event: ApplicationEvent) {
         match event {
-            ApplicationEvent::WindowEvent(event) => match event {
-                WindowEvent::MouseWheel { delta, .. } => {
-                    if let event::MouseScrollDelta::LineDelta(_, change) = delta {
-                        self.distance += change * self.speed;
+            ApplicationEvent::MouseWheel { delta, .. } => {
+                if let winit::event::MouseScrollDelta::LineDelta(_, change) = delta {
+                    self.distance += change * self.speed;
+                }
+            }
+            ApplicationEvent::MouseInput { state, button, .. } => {
+                if button == winit::event::MouseButton::Left {
+                    if state == winit::event::ElementState::Pressed {
+                        self.mouse_pressed = true;
+                    } else {
+                        self.mouse_pressed = false;
                     }
                 }
-                WindowEvent::MouseInput { state, button, .. } => {
-                    if button == event::MouseButton::Left {
-                        if state == event::ElementState::Pressed {
-                            self.mouse_pressed = true;
-                        } else {
-                            self.mouse_pressed = false;
-                        }
-                    }
+            }
+            ApplicationEvent::MouseMotion { delta: (x, y) } => {
+                if self.mouse_pressed {
+                    self.yaw += x as f32;
+                    self.pitch += y as f32;
                 }
-                _ => {}
-            },
-            ApplicationEvent::DeviceEvent(event) => match event {
-                DeviceEvent::MouseMotion { delta: (x, y) } => {
-                    if self.mouse_pressed {
-                        self.yaw += x as f32;
-                        self.pitch += y as f32;
-                    }
-                }
-                _ => {}
-            },
+            }
+            _ => {}
         };
 
         let eye = self.distance * self.direction_vector();
