@@ -43,7 +43,6 @@ pub enum ApplicationEvent {
     CursorMoved {
         device_id: winit::event::DeviceId,
         position: winit::dpi::PhysicalPosition<f64>,
-        modifiers: winit::event::ModifiersState,
     },
     CursorEntered {
         device_id: winit::event::DeviceId,
@@ -55,7 +54,6 @@ pub enum ApplicationEvent {
         device_id: winit::event::DeviceId,
         state: winit::event::ElementState,
         button: winit::event::MouseButton,
-        modifiers: winit::event::ModifiersState,
     },
     TouchpadPressure {
         device_id: winit::event::DeviceId,
@@ -108,34 +106,13 @@ impl ApplicationEvent {
                 input,
                 is_synthetic,
             },
-            winit::event::WindowEvent::CursorMoved {
-                device_id,
-                position,
-                modifiers,
-            } => ApplicationEvent::CursorMoved {
-                device_id,
-                position,
-                modifiers,
-            },
+            winit::event::WindowEvent::CursorMoved { device_id, position, .. } => ApplicationEvent::CursorMoved { device_id, position },
             winit::event::WindowEvent::CursorEntered { device_id } => ApplicationEvent::CursorEntered { device_id },
             winit::event::WindowEvent::CursorLeft { device_id } => ApplicationEvent::CursorLeft { device_id },
-            winit::event::WindowEvent::MouseWheel {
-                delta,
-                ..
-            } => ApplicationEvent::MouseWheel {
-                delta,
-            },
+            winit::event::WindowEvent::MouseWheel { delta, .. } => ApplicationEvent::MouseWheel { delta },
             winit::event::WindowEvent::MouseInput {
-                device_id,
-                state,
-                button,
-                modifiers,
-            } => ApplicationEvent::MouseInput {
-                device_id,
-                state,
-                button,
-                modifiers,
-            },
+                device_id, state, button, ..
+            } => ApplicationEvent::MouseInput { device_id, state, button },
             winit::event::WindowEvent::TouchpadPressure {
                 device_id,
                 pressure,

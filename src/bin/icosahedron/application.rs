@@ -150,11 +150,7 @@ impl Application {
         let depth_texture_view = depth_texture.create_default_view();
 
         let multisampled_frame_descriptor = &wgpu::TextureDescriptor {
-            size: wgpu::Extent3d {
-                width: width,
-                height: height,
-                depth: 1,
-            },
+            size: wgpu::Extent3d { width, height, depth: 1 },
             array_layer_count: 1,
             mip_level_count: 1,
             sample_count: 4,

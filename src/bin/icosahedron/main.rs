@@ -1,7 +1,7 @@
 mod application;
 mod ui;
 
-use iced_wgpu::{wgpu, window::SwapChain, Primitive, Renderer, Settings, Target, Viewport};
+use iced_wgpu::{wgpu, Primitive, Renderer, Settings, Target, Viewport};
 use iced_winit::{winit, Cache, Clipboard, MouseCursor, Size, UserInterface};
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
 
@@ -89,7 +89,7 @@ fn main() {
                 // Map window event to iced event
                 if let Some(event) = iced_winit::conversion::window_event(event, window.scale_factor(), modifiers) {
                     events.push(event);
-                }                
+                }
             }
             event::Event::DeviceEvent { event, .. } => {
                 match event {
