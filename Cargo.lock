@@ -2514,6 +2514,8 @@ dependencies = [
  "criterion",
  "glsl-to-spirv",
  "iced",
+ "iced_native",
+ "iced_style",
  "iced_wgpu",
  "iced_winit",
  "nalgebra-glm",

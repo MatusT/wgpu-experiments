@@ -21,6 +21,8 @@ safe-transmute = { git = "https://github.com/nabijaczleweli/safe-transmute-rs" }
 iced = { git ="https://github.com/hecrj/iced" }
 iced_wgpu = { git = "https://github.com/hecrj/iced" }
 iced_winit = { git = "https://github.com/hecrj/iced" }
+iced_native = { git = "https://github.com/hecrj/iced" }
+iced_style = { git = "https://github.com/hecrj/iced" }
 
 [dev-dependencies]
 criterion = "0.3"

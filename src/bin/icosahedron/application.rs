@@ -17,41 +17,39 @@ pub struct ApplicationOptions {
 pub struct Application {
     width: u32,
     height: u32,
-    options: ApplicationOptions,
 
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub options: ApplicationOptions,
 
-    pipeline: MeshPipeline,
-    bind_group: wgpu::BindGroup,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
 
-    depth_texture: wgpu::Texture,
-    depth_texture_view: wgpu::TextureView,
+    pub pipeline: MeshPipeline,
+    pub bind_group: wgpu::BindGroup,
 
-    multisampled_framebuffer: wgpu::TextureView,
+    pub depth_texture: wgpu::Texture,
+    pub depth_texture_view: wgpu::TextureView,
 
-    icosahedron_vertices: wgpu::Buffer,
-    icosahedron_normals: wgpu::Buffer,
-    icosahedron_indices: wgpu::Buffer,
-    icosahedron_indices_len: u32,
+    pub multisampled_framebuffer: wgpu::TextureView,
 
-    camera: RotationCamera,
-    camera_buffer: wgpu::Buffer,
+    pub icosahedron_vertices: wgpu::Buffer,
+    pub icosahedron_normals: wgpu::Buffer,
+    pub icosahedron_indices: wgpu::Buffer,
+    pub icosahedron_indices_len: u32,
 
-    positions_instanced_buffer: wgpu::Buffer,
+    pub camera: RotationCamera,
+    pub camera_buffer: wgpu::Buffer,
+
+    pub positions_instanced_buffer: wgpu::Buffer,
 }
 
 impl Application {
     pub fn new(width: u32, height: u32) -> Self {
         let options = ApplicationOptions { n: 100 };
 
-        let adapter = wgpu::Adapter::request(
-            &wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::Default,
-                backends: wgpu::BackendBit::PRIMARY,
-            },
-            // wgpu::BackendBit::PRIMARY,
-        )
+        let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::Default,
+            backends: wgpu::BackendBit::PRIMARY,
+        })
         .unwrap();
 
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
@@ -73,7 +71,6 @@ impl Application {
             icosahedron_vertices.push(v.position[1]);
             icosahedron_vertices.push(v.position[2]);
         }
-        // let icosahedron_vertices = device.create_buffer_with_data(transmute_to_bytes(&icosahedron_vertices), wgpu::BufferUsage::VERTEX);
         let icosahedron_vertices = device
             .create_buffer_mapped::<f32>(icosahedron_vertices.len(), wgpu::BufferUsage::VERTEX)
             .fill_from_slice(&icosahedron_vertices);
@@ -84,14 +81,12 @@ impl Application {
             icosahedron_normals.push(v.normal[1]);
             icosahedron_normals.push(v.normal[2]);
         }
-        // let icosahedron_normals = device.create_buffer_with_data(transmute_to_bytes(&icosahedron_normals), wgpu::BufferUsage::VERTEX);
         let icosahedron_normals = device
             .create_buffer_mapped::<f32>(icosahedron_normals.len(), wgpu::BufferUsage::VERTEX)
             .fill_from_slice(&icosahedron_normals);
 
         let icosahedron_indices = icosahedron_obj.indices;
         let icosahedron_indices_len = icosahedron_indices.len() as u32;
-        // let icosahedron_indices = device.create_buffer_with_data(transmute_to_bytes(&icosahedron_indices), wgpu::BufferUsage::INDEX);
         let icosahedron_indices = device
             .create_buffer_mapped(icosahedron_indices.len(), wgpu::BufferUsage::INDEX)
             .fill_from_slice(&icosahedron_indices);
@@ -113,9 +108,8 @@ impl Application {
                 }
             }
         }
-        // let positions_instanced_buffer = device.create_buffer_with_data(transmute_to_bytes(&positions), wgpu::BufferUsage::STORAGE_READ);
         let positions_instanced_buffer = device
-            .create_buffer_mapped::<f32>(positions.len(), wgpu::BufferUsage::STORAGE_READ)
+            .create_buffer_mapped::<f32>(positions.len(), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST)
             .fill_from_slice(&positions);
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -197,10 +191,6 @@ impl Application {
         &mut self.options
     }
 
-    pub fn queue(&self) -> &wgpu::Queue {
-        &self.queue
-    }
-
     pub fn queue_mut(&mut self) -> &mut wgpu::Queue {
         &mut self.queue
     }
@@ -216,8 +206,9 @@ impl ApplicationSkeleton for Application {
     }
 
     fn render(&mut self, frame: &wgpu::TextureView) {
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+        let n = self.options.n * self.options.n * self.options.n;
 
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
         {
             let size = std::mem::size_of::<CameraUbo>();
             let camera_buffer = self.device.create_buffer_mapped(size, wgpu::BufferUsage::COPY_SRC);
@@ -250,11 +241,7 @@ impl ApplicationSkeleton for Application {
             rpass.set_bind_group(0, &self.bind_group, &[]);
             rpass.set_vertex_buffers(0, &[(&self.icosahedron_vertices, 0), (&self.icosahedron_normals, 0)]);
             rpass.set_index_buffer(&self.icosahedron_indices, 0);
-            rpass.draw_indexed(
-                0..self.icosahedron_indices_len,
-                0,
-                0..(self.options.n * self.options.n * self.options.n) as u32,
-            );
+            rpass.draw_indexed(0..self.icosahedron_indices_len, 0, 0..n as u32);
         }
 
         self.queue.submit(&[encoder.finish()]);

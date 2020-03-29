@@ -3,6 +3,7 @@ mod ui;
 
 use iced_wgpu::{wgpu, Primitive, Renderer, Settings, Target, Viewport};
 use iced_winit::{winit, Cache, Clipboard, MouseCursor, Size, UserInterface};
+use safe_transmute::*;
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
 
 fn main() {
@@ -48,6 +49,7 @@ fn main() {
     let clipboard = Clipboard::new(&window);
     let mut ui = ui::UserInterface::new();
 
+    let mut ui_on = true;
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {
@@ -77,7 +79,16 @@ fn main() {
                     }
                     | WindowEvent::CloseRequested => {
                         *control_flow = ControlFlow::Exit;
-                    }
+                    },
+                    WindowEvent::KeyboardInput {
+                        input:
+                            event::KeyboardInput {
+                                virtual_keycode: Some(event::VirtualKeyCode::U),
+                                state: event::ElementState::Pressed,
+                                ..
+                            },
+                        ..
+                    } => { ui_on = !ui_on; },
                     _ => {}
                 };
 
@@ -134,7 +145,7 @@ fn main() {
                     // about messages, so updating our state is pretty
                     // straightforward.
                     for message in messages {
-                        ui.update(message, &mut application.options_mut());
+                        ui.update(message, &mut application);
                     }
 
                     // Once the state has been changed, we rebuild our updated
@@ -179,27 +190,29 @@ fn main() {
                 application.render(&frame.view);
 
                 // And then iced on top
-                let mut encoder = application
-                    .device()
-                    .create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-                let viewport = Viewport::new(sc_desc.width, sc_desc.height);
-                let mouse_cursor = renderer.draw(
-                    application.device_mut(),
-                    &mut encoder,
-                    Target {
-                        texture: &frame.view,
-                        viewport: &viewport,
-                    },
-                    &output,
-                    window.scale_factor(),
-                    &["Some debug information!"],
-                );
+                if ui_on {
+                    let mut encoder = application
+                        .device()
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+                    let viewport = Viewport::new(sc_desc.width, sc_desc.height);
+                    let mouse_cursor = renderer.draw(
+                        application.device_mut(),
+                        &mut encoder,
+                        Target {
+                            texture: &frame.view,
+                            viewport: &viewport,
+                        },
+                        &output,
+                        window.scale_factor(),
+                        &[""],
+                    );
 
-                // Then we submit the work
-                application.queue_mut().submit(&[encoder.finish()]);
+                    // Then we submit the work
+                    application.queue_mut().submit(&[encoder.finish()]);
 
-                // And update the mouse cursor
-                window.set_cursor_icon(iced_winit::conversion::mouse_cursor(mouse_cursor));
+                    // And update the mouse cursor
+                    window.set_cursor_icon(iced_winit::conversion::mouse_cursor(mouse_cursor));
+                }
             }
             _ => {}
         }
