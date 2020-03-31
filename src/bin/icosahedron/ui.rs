@@ -20,7 +20,7 @@ impl UserInterface {
     }
 
     pub fn update(&self, message: Message, application: &mut Application) {
-        match message {            
+        match message {
             Message::NumberCubesChanges(n) => {
                 let mut positions = Vec::new();
                 let n_i32 = n as i32;

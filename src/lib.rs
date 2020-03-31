@@ -1,6 +1,9 @@
 pub mod camera;
 pub mod pipelines;
 
+use obj::*;
+use std::path::Path;
+use wgpu;
 use winit;
 
 pub enum ShaderStage {
@@ -18,11 +21,6 @@ pub fn load_glsl(code: &str, stage: ShaderStage) -> Vec<u32> {
 
     wgpu::read_spirv(glsl_to_spirv::compile(&code, ty).unwrap()).unwrap()
 }
-
-// pub enum ApplicationEvent<'a> {
-//     DeviceEvent(winit::event::DeviceEvent),
-//     WindowEvent(winit::event::WindowEvent<'a>),
-// }
 
 #[derive(Clone)]
 pub enum ApplicationEvent {
@@ -152,4 +150,78 @@ pub trait ApplicationSkeleton {
     fn device(&self) -> &wgpu::Device;
 
     fn device_mut(&mut self) -> &mut wgpu::Device;
+}
+
+pub struct Mesh {
+    vertices: wgpu::Buffer,
+    vertices_len: u32,
+
+    normals: wgpu::Buffer,
+
+    indices: wgpu::Buffer,
+    indices_len: u32,
+}
+
+impl Mesh {
+    pub fn vertices(&self) -> &wgpu::Buffer {
+        &self.vertices
+    }
+
+    pub fn vertices_len(&self) -> u32 {
+        self.vertices_len
+    }
+
+    pub fn normals(&self) -> &wgpu::Buffer {
+        &self.normals
+    }
+
+    pub fn indices(&self) -> &wgpu::Buffer {
+        &self.indices
+    }
+
+    pub fn indices_len(&self) -> u32 {
+        self.indices_len
+    }
+
+    pub fn from_obj<P: AsRef<Path>>(device: &wgpu::Device, path: P) -> Self {
+        let file = std::io::BufReader::new(std::fs::File::open(path).unwrap());
+        let obj: Obj = load_obj(file).expect("Incorrect .obj file");
+
+        let mut vertices = Vec::new();
+        for v in obj.vertices.iter() {
+            vertices.push(v.position[0]);
+            vertices.push(v.position[1]);
+            vertices.push(v.position[2]);
+        }
+        let vertices_len = vertices.len() as u32;
+        let vertices = device
+            .create_buffer_mapped::<f32>(vertices.len(), wgpu::BufferUsage::VERTEX)
+            .fill_from_slice(&vertices);
+
+        let mut normals = Vec::new();
+        for v in obj.vertices.iter() {
+            normals.push(v.normal[0]);
+            normals.push(v.normal[1]);
+            normals.push(v.normal[2]);
+        }
+        let normals = device
+            .create_buffer_mapped::<f32>(normals.len(), wgpu::BufferUsage::VERTEX)
+            .fill_from_slice(&normals);
+
+        let indices = obj.indices;
+        let indices_len = indices.len() as u32;
+        let indices = device
+            .create_buffer_mapped(indices.len(), wgpu::BufferUsage::INDEX)
+            .fill_from_slice(&indices);
+
+        Self {
+            vertices,
+            vertices_len,
+
+            normals,
+
+            indices,
+            indices_len,
+        }
+    }
 }

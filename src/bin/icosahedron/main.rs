@@ -79,7 +79,7 @@ fn main() {
                     }
                     | WindowEvent::CloseRequested => {
                         *control_flow = ControlFlow::Exit;
-                    },
+                    }
                     WindowEvent::KeyboardInput {
                         input:
                             event::KeyboardInput {
@@ -88,7 +88,9 @@ fn main() {
                                 ..
                             },
                         ..
-                    } => { ui_on = !ui_on; },
+                    } => {
+                        ui_on = !ui_on;
+                    }
                     _ => {}
                 };
 
