@@ -1,17 +1,33 @@
 use crate::application::*;
 
 use iced_wgpu::Renderer;
-use iced_winit::{container, slider, Align, Background, Color, Column, Container, Element, Length, Row, Slider, Text};
+use iced_winit::{slider, Align, Color, Column, Container, Element, Length, Row, Slider, Text, Radio};
 
 pub struct UserInterface {
     slider: slider::State,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Message {
-    NumberCubesChanges(f32),
+    NumberCubesChanged(f32),
+    MeshSelected(MeshType),
 }
 
+/*
+
+
+        Self::container("Radio button")
+            .push(Text::new(
+                "A radio button is normally used to represent a choice... \
+                 Surprise test!",
+            ))
+            .push(question)
+            .push(Text::new(
+                "Iced works very well with iterators! The list above is \
+                 basically created by folding a column over the different \
+                 choices, creating a radio button for each one of them!",
+            ))
+*/
 impl UserInterface {
     pub fn new() -> Self {
         Self {
@@ -21,7 +37,7 @@ impl UserInterface {
 
     pub fn update(&self, message: Message, application: &mut Application) {
         match message {
-            Message::NumberCubesChanges(n) => {
+            Message::NumberCubesChanged(n) => {
                 let mut positions = Vec::new();
                 let n_i32 = n as i32;
                 for x in -n_i32 / 2..n_i32 / 2 {
@@ -61,6 +77,9 @@ impl UserInterface {
                 });
 
                 application.options.n = n as i32;
+            },
+            Message::MeshSelected(mesh) => {
+                application.options.mesh = mesh;
             }
         }
     }
@@ -73,14 +92,27 @@ impl UserInterface {
                 .width(Length::Units(500))
                 .spacing(20)
                 .push(Slider::new(slider, 0.0..=1000.0, options.n as f32, move |n| {
-                    Message::NumberCubesChanges(n)
+                    Message::NumberCubesChanged(n)
                 }));
+
+        let mesh_types = Column::new()
+            .padding(20)
+            .spacing(10)
+            .push(Text::new("Mesh").size(24))
+            .push(
+                MeshType::all()
+                    .iter()
+                    .cloned()
+                    .fold(Column::new().padding(10).spacing(20), |choices, mesh_type| {
+                        choices.push(Radio::new(mesh_type, mesh_type.into(), Some(options.mesh), Message::MeshSelected))
+                    },
+                ));
 
         Column::new()
             .push(
                 Container::new(
                     Row::new()
-                        .width(Length::Units(200))
+                        .width(Length::Units(300))
                         .height(Length::Fill)
                         .align_items(Align::Start)
                         .push(
@@ -91,7 +123,7 @@ impl UserInterface {
                                     .push(Text::new("Background color").color(Color::WHITE))
                                     .push(sliders)
                                     .push(Text::new(format!("{:?}", options.n)).size(14).color(Color::WHITE)),
-                            ),
+                            ).push(mesh_types),
                         ),
                 )
                 .style(style::Theme::Dark),

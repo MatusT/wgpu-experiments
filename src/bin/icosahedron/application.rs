@@ -1,6 +1,6 @@
 use wgpu_experiments::camera::*;
 use wgpu_experiments::pipelines::mesh::MeshPipeline;
-use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
+use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton, Mesh};
 
 extern crate alloc;
 
@@ -10,7 +10,61 @@ use std::fs::File;
 use std::io::BufReader;
 use wgpu;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MeshType {
+    Billboard,
+    Cube,
+    Icosahedron1,
+    Icosahedron2,
+    Icosahedron3,
+    Icosahedron4,
+    Icosahedron5,
+}
+
+impl MeshType {
+    pub fn all() -> [MeshType; 7] {
+        [
+            MeshType::Billboard,
+            MeshType::Cube,
+            MeshType::Icosahedron1,
+            MeshType::Icosahedron2,
+            MeshType::Icosahedron3,
+            MeshType::Icosahedron4,
+            MeshType::Icosahedron5,
+        ]
+    }
+}
+
+impl From<MeshType> for &str {
+    fn from(mesh_type: MeshType) -> &'static str {
+        match mesh_type {
+            MeshType::Billboard => "Billboard",
+            MeshType::Cube => "Cube",
+            MeshType::Icosahedron1 => "Icosahedron 1",
+            MeshType::Icosahedron2 => "Icosahedron 2",
+            MeshType::Icosahedron3 => "Icosahedron 3",
+            MeshType::Icosahedron4 => "Icosahedron 4",
+            MeshType::Icosahedron5 => "Icosahedron 5",
+        }
+    }
+}
+
+impl From<MeshType> for usize {
+    fn from(mesh_type: MeshType) -> usize {
+        match mesh_type {
+            MeshType::Billboard => 0,
+            MeshType::Cube => 1,
+            MeshType::Icosahedron1 => 2,
+            MeshType::Icosahedron2 => 3,
+            MeshType::Icosahedron3 => 4,
+            MeshType::Icosahedron4 => 5,
+            MeshType::Icosahedron5 => 6,
+        }
+    }
+}
+
 pub struct ApplicationOptions {
+    pub mesh: MeshType,
     pub n: i32,
 }
 
@@ -31,10 +85,7 @@ pub struct Application {
 
     pub multisampled_framebuffer: wgpu::TextureView,
 
-    pub icosahedron_vertices: wgpu::Buffer,
-    pub icosahedron_normals: wgpu::Buffer,
-    pub icosahedron_indices: wgpu::Buffer,
-    pub icosahedron_indices_len: u32,
+    pub meshes: Vec<Mesh>,
 
     pub camera: RotationCamera,
     pub camera_buffer: wgpu::Buffer,
@@ -44,7 +95,10 @@ pub struct Application {
 
 impl Application {
     pub fn new(width: u32, height: u32) -> Self {
-        let options = ApplicationOptions { n: 100 };
+        let options = ApplicationOptions {
+            mesh: MeshType::Cube,
+            n: 50,
+        };
 
         let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::Default,
@@ -61,35 +115,15 @@ impl Application {
 
         let pipeline = MeshPipeline::new(&device);
 
-        // Icosahedron
-        let icosahedron_file = BufReader::new(File::open("cube.obj").unwrap());
-        let icosahedron_obj: Obj = load_obj(icosahedron_file).unwrap();
-
-        let mut icosahedron_vertices = Vec::new();
-        for v in icosahedron_obj.vertices.iter() {
-            icosahedron_vertices.push(v.position[0]);
-            icosahedron_vertices.push(v.position[1]);
-            icosahedron_vertices.push(v.position[2]);
-        }
-        let icosahedron_vertices = device
-            .create_buffer_mapped::<f32>(icosahedron_vertices.len(), wgpu::BufferUsage::VERTEX)
-            .fill_from_slice(&icosahedron_vertices);
-
-        let mut icosahedron_normals = Vec::new();
-        for v in icosahedron_obj.vertices.iter() {
-            icosahedron_normals.push(v.normal[0]);
-            icosahedron_normals.push(v.normal[1]);
-            icosahedron_normals.push(v.normal[2]);
-        }
-        let icosahedron_normals = device
-            .create_buffer_mapped::<f32>(icosahedron_normals.len(), wgpu::BufferUsage::VERTEX)
-            .fill_from_slice(&icosahedron_normals);
-
-        let icosahedron_indices = icosahedron_obj.indices;
-        let icosahedron_indices_len = icosahedron_indices.len() as u32;
-        let icosahedron_indices = device
-            .create_buffer_mapped(icosahedron_indices.len(), wgpu::BufferUsage::INDEX)
-            .fill_from_slice(&icosahedron_indices);
+        let meshes = vec![
+            Mesh::from_obj(&device, "cube.obj"),
+            Mesh::from_obj(&device, "cube.obj"),
+            Mesh::from_obj(&device, "icosahedron_1.obj"),
+            Mesh::from_obj(&device, "icosahedron_2.obj"),
+            Mesh::from_obj(&device, "icosahedron_3.obj"),
+            Mesh::from_obj(&device, "icosahedron_4.obj"),
+            Mesh::from_obj(&device, "icosahedron_5.obj"),
+        ];
 
         let aspect = width as f32 / height as f32;
         let camera = RotationCamera::new(aspect, 0.785398163, 0.1);
@@ -171,10 +205,7 @@ impl Application {
 
             multisampled_framebuffer,
 
-            icosahedron_vertices,
-            icosahedron_normals,
-            icosahedron_indices,
-            icosahedron_indices_len,
+            meshes,
 
             camera,
             camera_buffer,
@@ -219,6 +250,8 @@ impl ApplicationSkeleton for Application {
         }
 
         {
+            let mesh_index: usize = self.options.mesh.into();
+            let mesh = &self.meshes[mesh_index];
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &self.multisampled_framebuffer,
@@ -239,9 +272,9 @@ impl ApplicationSkeleton for Application {
             });
             rpass.set_pipeline(&self.pipeline.pipeline);
             rpass.set_bind_group(0, &self.bind_group, &[]);
-            rpass.set_vertex_buffers(0, &[(&self.icosahedron_vertices, 0), (&self.icosahedron_normals, 0)]);
-            rpass.set_index_buffer(&self.icosahedron_indices, 0);
-            rpass.draw_indexed(0..self.icosahedron_indices_len, 0, 0..n as u32);
+            rpass.set_vertex_buffers(0, &[(&mesh.vertices(), 0), (&mesh.normals(), 0)]);
+            rpass.set_index_buffer(&mesh.indices(), 0);
+            rpass.draw_indexed(0..mesh.indices_len(), 0, 0..n as u32);
         }
 
         self.queue.submit(&[encoder.finish()]);
