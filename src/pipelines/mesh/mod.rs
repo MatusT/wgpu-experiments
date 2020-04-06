@@ -18,7 +18,7 @@ impl MeshPipeline {
             bindings: &[
                 wgpu::BindGroupLayoutBinding {
                     binding: 0,
-                    visibility: wgpu::ShaderStage::VERTEX,
+                    visibility: wgpu::ShaderStage::VERTEX | wgpu::ShaderStage::FRAGMENT,
                     ty: wgpu::BindingType::UniformBuffer { dynamic: false },
                 },
                 wgpu::BindGroupLayoutBinding {

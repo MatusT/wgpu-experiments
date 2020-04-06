@@ -1,13 +1,10 @@
 use wgpu_experiments::camera::*;
-use wgpu_experiments::pipelines::mesh::MeshPipeline;
+use wgpu_experiments::pipelines::{mesh::MeshPipeline, sphere_billboards::SphereBillboardPipeline};
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton, Mesh};
 
 extern crate alloc;
 
-use obj::*;
 use safe_transmute::*;
-use std::fs::File;
-use std::io::BufReader;
 use wgpu;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,6 +77,9 @@ pub struct Application {
     pub pipeline: MeshPipeline,
     pub bind_group: wgpu::BindGroup,
 
+    pub billboards_pipeline: SphereBillboardPipeline,
+    pub billboards_bind_group: wgpu::BindGroup,
+
     pub depth_texture: wgpu::Texture,
     pub depth_texture_view: wgpu::TextureView,
 
@@ -106,6 +106,8 @@ impl Application {
         })
         .unwrap();
 
+        println!("{:?}", adapter.get_info().name);
+
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
             extensions: wgpu::Extensions {
                 anisotropic_filtering: false,
@@ -114,6 +116,7 @@ impl Application {
         });
 
         let pipeline = MeshPipeline::new(&device);
+        let billboards_pipeline = SphereBillboardPipeline::new(&device);
 
         let meshes = vec![
             Mesh::from_obj(&device, "cube.obj"),
@@ -146,8 +149,27 @@ impl Application {
             .create_buffer_mapped::<f32>(positions.len(), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST)
             .fill_from_slice(&positions);
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let bind_group = device.create_bind_group(&&wgpu::BindGroupDescriptor {
             layout: &pipeline.bind_group_layout,
+            bindings: &[
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &camera_buffer,
+                        range: 0..192,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &positions_instanced_buffer,
+                        range: 0..(positions.len() * std::mem::size_of::<f32>()) as u64,
+                    },
+                },
+            ],
+        });
+        let billboards_bind_group = device.create_bind_group(&&wgpu::BindGroupDescriptor {
+            layout: &billboards_pipeline.bind_group_layout,
             bindings: &[
                 wgpu::Binding {
                     binding: 0,
@@ -200,6 +222,9 @@ impl Application {
             pipeline,
             bind_group,
 
+            billboards_pipeline,
+            billboards_bind_group,
+
             depth_texture,
             depth_texture_view,
 
@@ -250,8 +275,6 @@ impl ApplicationSkeleton for Application {
         }
 
         {
-            let mesh_index: usize = self.options.mesh.into();
-            let mesh = &self.meshes[mesh_index];
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &self.multisampled_framebuffer,
@@ -270,11 +293,21 @@ impl ApplicationSkeleton for Application {
                     clear_stencil: 0,
                 }),
             });
-            rpass.set_pipeline(&self.pipeline.pipeline);
-            rpass.set_bind_group(0, &self.bind_group, &[]);
-            rpass.set_vertex_buffers(0, &[(&mesh.vertices(), 0), (&mesh.normals(), 0)]);
-            rpass.set_index_buffer(&mesh.indices(), 0);
-            rpass.draw_indexed(0..mesh.indices_len(), 0, 0..n as u32);
+
+            if self.options.mesh == MeshType::Billboard {
+                rpass.set_pipeline(&self.billboards_pipeline.pipeline);
+                rpass.set_bind_group(0, &self.billboards_bind_group, &[]);
+                rpass.draw(0..(n * 3) as u32, 0..1);
+            } else {
+                let mesh_index: usize = self.options.mesh.into();
+                let mesh = &self.meshes[mesh_index];
+
+                rpass.set_pipeline(&self.pipeline.pipeline);
+                rpass.set_bind_group(0, &self.bind_group, &[]);
+                rpass.set_vertex_buffers(0, &[(&mesh.vertices(), 0), (&mesh.normals(), 0)]);
+                rpass.set_index_buffer(&mesh.indices(), 0);
+                rpass.draw_indexed(0..mesh.indices_len(), 0, 0..n as u32);
+            }
         }
 
         self.queue.submit(&[encoder.finish()]);

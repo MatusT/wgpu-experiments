@@ -1,7 +1,7 @@
 use crate::application::*;
 
 use iced_wgpu::Renderer;
-use iced_winit::{slider, Align, Color, Column, Container, Element, Length, Row, Slider, Text, Radio};
+use iced_winit::{slider, Align, Color, Column, Container, Element, Length, Radio, Row, Slider, Text};
 
 pub struct UserInterface {
     slider: slider::State,
@@ -13,21 +13,6 @@ pub enum Message {
     MeshSelected(MeshType),
 }
 
-/*
-
-
-        Self::container("Radio button")
-            .push(Text::new(
-                "A radio button is normally used to represent a choice... \
-                 Surprise test!",
-            ))
-            .push(question)
-            .push(Text::new(
-                "Iced works very well with iterators! The list above is \
-                 basically created by folding a column over the different \
-                 choices, creating a radio button for each one of them!",
-            ))
-*/
 impl UserInterface {
     pub fn new() -> Self {
         Self {
@@ -50,6 +35,7 @@ impl UserInterface {
                         }
                     }
                 }
+                // assert!(n_i32 * n_i32 * n_i32 * 4 == positions.len() as i32);
 
                 application.positions_instanced_buffer = application
                     .device
@@ -77,7 +63,7 @@ impl UserInterface {
                 });
 
                 application.options.n = n as i32;
-            },
+            }
             Message::MeshSelected(mesh) => {
                 application.options.mesh = mesh;
             }
@@ -95,18 +81,14 @@ impl UserInterface {
                     Message::NumberCubesChanged(n)
                 }));
 
-        let mesh_types = Column::new()
-            .padding(20)
-            .spacing(10)
-            .push(Text::new("Mesh").size(24))
-            .push(
-                MeshType::all()
-                    .iter()
-                    .cloned()
-                    .fold(Column::new().padding(10).spacing(20), |choices, mesh_type| {
-                        choices.push(Radio::new(mesh_type, mesh_type.into(), Some(options.mesh), Message::MeshSelected))
-                    },
-                ));
+        let mesh_types = Column::new().padding(20).spacing(10).push(Text::new("Mesh").size(24)).push(
+            MeshType::all()
+                .iter()
+                .cloned()
+                .fold(Column::new().padding(10).spacing(20), |choices, mesh_type| {
+                    choices.push(Radio::new(mesh_type, mesh_type.into(), Some(options.mesh), Message::MeshSelected))
+                }),
+        );
 
         Column::new()
             .push(
@@ -116,14 +98,18 @@ impl UserInterface {
                         .height(Length::Fill)
                         .align_items(Align::Start)
                         .push(
-                            Column::new().width(Length::Fill).align_items(Align::End).push(
-                                Column::new()
-                                    .padding(10)
-                                    .spacing(10)
-                                    .push(Text::new("Background color").color(Color::WHITE))
-                                    .push(sliders)
-                                    .push(Text::new(format!("{:?}", options.n)).size(14).color(Color::WHITE)),
-                            ).push(mesh_types),
+                            Column::new()
+                                .width(Length::Fill)
+                                .align_items(Align::End)
+                                .push(
+                                    Column::new()
+                                        .padding(10)
+                                        .spacing(10)
+                                        .push(Text::new("Background color").color(Color::WHITE))
+                                        .push(sliders)
+                                        .push(Text::new(format!("{:?}", options.n)).size(14).color(Color::WHITE)),
+                                )
+                                .push(mesh_types),
                         ),
                 )
                 .style(style::Theme::Dark),

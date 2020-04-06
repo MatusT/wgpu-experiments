@@ -3,7 +3,6 @@ mod ui;
 
 use iced_wgpu::{wgpu, Primitive, Renderer, Settings, Target, Viewport};
 use iced_winit::{winit, Cache, Clipboard, MouseCursor, Size, UserInterface};
-use safe_transmute::*;
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
 
 fn main() {
