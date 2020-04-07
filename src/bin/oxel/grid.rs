@@ -2,23 +2,27 @@ use nalgebra_glm as glm;
 use wgpu;
 
 pub struct VoxelGrid {
+    pub size: u32,
+
     pub bb_min: glm::Vec3,
     pub bb_max: glm::Vec3,
     pub bb_diff: glm::Vec3,
+
+    pub voxels: Vec<Voxel>,
 }
 #[derive(Copy, Clone)]
 pub struct Voxel {
     pub filled: bool,
 
     /// Distance of filled voxel to shell in each positive direction
-    pub distance: glm::Vec3,
+    pub distance: glm::TVec3<u32>,
 }
 
 impl Default for Voxel {
     fn default() -> Self {
         Voxel {
             filled: false,
-            distance: glm::vec3(0.0, 0.0, 0.0),
+            distance: glm::vec3(0, 0, 0),
         }
     }
 }
@@ -54,9 +58,13 @@ impl VoxelGrid {
         let bb_diff = bb_max - bb_min;
 
         // Create voxel grid
-        let grid_dimension = 128.0f32;
+        let grid_dimension = 128u32;
         let grid_size = glm::vec3(grid_dimension, grid_dimension, grid_dimension);
-        let voxel_size = glm::vec3(bb_diff.x / grid_size.x, bb_diff.y / grid_size.y, bb_diff.z / grid_size.z);
+        let voxel_size = glm::vec3(
+            bb_diff.x / grid_size.x as f32,
+            bb_diff.y / grid_size.y as f32,
+            bb_diff.z / grid_size.z as f32,
+        );
         let voxel_halfsize = voxel_size.apply_into(|e| e * 0.5);
         let mut voxels = vec![Voxel::default(); (grid_dimension * grid_dimension * grid_dimension) as usize];
 
@@ -97,6 +105,10 @@ impl VoxelGrid {
             (width * height * z) + (width * y) + x
         };
 
+        // let grid_1d_to_3d: = input|input: usize| -> glm::TVec3<u32> {
+
+        // }
+
         for atom in atoms.iter() {
             let atom_position = atom.xyz();
             let atom_radius = atom[4];
@@ -108,7 +120,6 @@ impl VoxelGrid {
             let atom_bb_max = snap_to_grid(atom_bb_max, Round::Ceil);
             let atom_bb_min = snap_to_grid(atom_bb_min, Round::Floor);
 
-            // 2. Iterate over all the voxels inside the bounding box
             let offsets: [glm::Vec3; 8] = [
                 glm::vec3(1.0, 1.0, 1.0),
                 glm::vec3(-1.0, 1.0, 1.0),
@@ -119,7 +130,7 @@ impl VoxelGrid {
                 glm::vec3(-1.0, -1.0, -1.0),
                 glm::vec3(1.0, -1.0, -1.0),
             ];
-
+            // 2. Iterate over all the voxels inside the atom's bounding box
             for x in atom_bb_min.x..atom_bb_max.x {
                 for y in atom_bb_min.y..atom_bb_max.y {
                     for z in atom_bb_min.z..atom_bb_max.z {
@@ -152,7 +163,69 @@ impl VoxelGrid {
         // Compute in the same loop:
         // - positive distance field
         // - inner voxels
+        for global_x in 0..grid_size.x {
+            for global_y in 0..grid_size.y {
+                for global_z in 0..grid_size.z {
+                    let mut distance = glm::vec3(0, 0, 0);
+                    let mut inner = [false; 6];
 
-        Self { bb_min, bb_max, bb_diff }
+                    for x in 0..grid_size.x {
+                        if x < global_x && voxels[grid_3d_to_1d(glm::vec3(x, global_y, global_z))].filled {
+                            inner[0] = true;
+                        }
+
+                        if x > global_x {
+                            if voxels[grid_3d_to_1d(glm::vec3(x, global_y, global_z))].filled {
+                                distance.x += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    for y in 0..grid_size.y {
+                        if y < global_y && voxels[grid_3d_to_1d(glm::vec3(global_x, y, global_z))].filled {
+                            inner[0] = true;
+                        }
+
+                        if y > global_y {
+                            if voxels[grid_3d_to_1d(glm::vec3(global_x, y, global_z))].filled {
+                                distance.y += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    for z in 0..grid_size.z {
+                        if z < global_z && voxels[grid_3d_to_1d(glm::vec3(global_x, global_y, z))].filled {
+                            inner[0] = true;
+                        }
+
+                        if z > global_z {
+                            if voxels[grid_3d_to_1d(glm::vec3(global_x, global_y, z))].filled {
+                                distance.z += 1;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+
+                    if inner == [true; 6] {
+                        voxels[grid_3d_to_1d(glm::vec3(global_x, global_y, global_z))].filled;
+                    }
+                }
+            }
+        }
+
+        Self {
+            size : grid_dimension,
+            
+            bb_min,
+            bb_max,
+            bb_diff,
+
+            voxels,
+        }
     }
 }
