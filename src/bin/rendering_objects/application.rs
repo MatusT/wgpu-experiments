@@ -149,7 +149,7 @@ impl Application {
             .create_buffer_mapped::<f32>(positions.len(), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST)
             .fill_from_slice(&positions);
 
-        let bind_group = device.create_bind_group(&&wgpu::BindGroupDescriptor {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &pipeline.bind_group_layout,
             bindings: &[
                 wgpu::Binding {
@@ -168,7 +168,7 @@ impl Application {
                 },
             ],
         });
-        let billboards_bind_group = device.create_bind_group(&&wgpu::BindGroupDescriptor {
+        let billboards_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &billboards_pipeline.bind_group_layout,
             bindings: &[
                 wgpu::Binding {
@@ -241,10 +241,6 @@ impl Application {
 
     pub fn options(&self) -> &ApplicationOptions {
         &self.options
-    }
-
-    pub fn options_mut(&mut self) -> &mut ApplicationOptions {
-        &mut self.options
     }
 
     pub fn queue_mut(&mut self) -> &mut wgpu::Queue {

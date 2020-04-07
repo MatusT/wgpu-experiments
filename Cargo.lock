@@ -1153,6 +1153,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b294d6fa9ee409a054354afc4352b0b9ef7ca222c69b8812cbea9e7d2bf3783f"
 
 [[package]]
+name = "lib3dmol"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f16c4bd7a594c9f51093c2ac55958db8af526724300a7b1ad7a67d0367e5d341"
+dependencies = [
+ "lazy_static",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.67"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2518,6 +2527,7 @@ dependencies = [
  "iced_style",
  "iced_wgpu",
  "iced_winit",
+ "lib3dmol",
  "nalgebra-glm",
  "obj-rs",
  "rand",

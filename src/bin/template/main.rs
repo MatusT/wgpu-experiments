@@ -1,4 +1,5 @@
 mod application;
+mod style;
 mod ui;
 
 use iced_wgpu::{wgpu, Primitive, Renderer, Settings, Target, Viewport};
@@ -19,7 +20,7 @@ fn main() {
 
     let (window, size, surface) = {
         let window = winit::window::Window::new(&event_loop).unwrap();
-        window.set_title("Hello world");
+        window.set_title("Template");
         let size = window.inner_size();
         let surface = wgpu::Surface::create(&window);
         (window, size, surface)
