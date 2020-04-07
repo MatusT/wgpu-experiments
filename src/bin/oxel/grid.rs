@@ -1,5 +1,4 @@
 use nalgebra_glm as glm;
-use wgpu;
 
 pub struct VoxelGrid {
     pub size: u32,
@@ -7,6 +6,7 @@ pub struct VoxelGrid {
     pub bb_min: glm::Vec3,
     pub bb_max: glm::Vec3,
     pub bb_diff: glm::Vec3,
+    pub voxel_size: glm::Vec3,
 
     pub voxels: Vec<Voxel>,
 }
@@ -34,13 +34,13 @@ pub enum Round {
 }
 
 impl VoxelGrid {
-    pub fn new(device: &wgpu::Device, mut atoms: Vec<glm::Vec4>) -> Self {
+    pub fn new(mut atoms: Vec<glm::Vec4>) -> Self {
         // Find bounding box of the entire structure
         let mut bb_max = glm::vec3(std::f32::NEG_INFINITY, std::f32::NEG_INFINITY, std::f32::NEG_INFINITY);
         let mut bb_min = glm::vec3(std::f32::INFINITY, std::f32::INFINITY, std::f32::INFINITY);
         for atom in atoms.iter() {
             let atom_position = atom.xyz();
-            let atom_radius = atom[4];
+            let atom_radius = atom[3];
             bb_max = glm::max2(&bb_max, &(atom_position + glm::vec3(atom_radius, atom_radius, atom_radius)));
             bb_min = glm::min2(&bb_min, &(atom_position - glm::vec3(atom_radius, atom_radius, atom_radius)));
         }
@@ -105,13 +105,9 @@ impl VoxelGrid {
             (width * height * z) + (width * y) + x
         };
 
-        // let grid_1d_to_3d: = input|input: usize| -> glm::TVec3<u32> {
-
-        // }
-
         for atom in atoms.iter() {
             let atom_position = atom.xyz();
-            let atom_radius = atom[4];
+            let atom_radius = atom[3];
 
             // 1. Find the bounding box of the atom
             let atom_bb_max = atom_position + glm::vec3(atom_radius, atom_radius, atom_radius);
@@ -135,6 +131,11 @@ impl VoxelGrid {
                 for y in atom_bb_min.y..atom_bb_max.y {
                     for z in atom_bb_min.z..atom_bb_max.z {
                         let grid_position = glm::vec3(x, y, z);
+
+                        if grid_position < glm::zero() || grid_position >= glm::vec3(grid_dimension, grid_dimension, grid_dimension) {
+                            continue;
+                        }
+
                         let world_position = grid_to_position(grid_position);
 
                         // 3. Mark the voxels as `filled` only when all corners of a voxel are inside the radius of the atom
@@ -219,11 +220,12 @@ impl VoxelGrid {
         }
 
         Self {
-            size : grid_dimension,
-            
+            size: grid_dimension,
+
             bb_min,
             bb_max,
             bb_diff,
+            voxel_size,
 
             voxels,
         }

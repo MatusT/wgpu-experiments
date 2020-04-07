@@ -3,7 +3,7 @@ use nalgebra_glm as glm;
 use safe_transmute::TriviallyTransmutable;
 use winit;
 #[repr(C)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CameraUbo {
     pub projection: glm::Mat4,
     pub view: glm::Mat4,
@@ -31,15 +31,14 @@ pub struct RotationCamera {
 
 impl RotationCamera {
     pub fn new(aspect: f32, fov: f32, near: f32) -> RotationCamera {
+        let distance = 1.0;
         let projection = glm::reversed_infinite_perspective_rh_zo(aspect, fov, near);
-        let view = glm::look_at(&glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
-        let projection_view = projection * view;
 
-        Self {
+        let mut camera = RotationCamera {
             ubo: CameraUbo {
                 projection,
-                view,
-                projection_view,
+                view: glm::one(),
+                projection_view: glm::one(),
             },
 
             yaw: -90.0,
@@ -48,7 +47,13 @@ impl RotationCamera {
 
             speed: 1.0,
             mouse_pressed: false,
-        }
+        };
+
+        let eye = camera.distance * camera.direction_vector();
+        camera.ubo.view = glm::look_at(&eye, &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
+        camera.ubo.projection_view = camera.ubo.projection * camera.ubo.view;
+
+        camera
     }
 
     fn direction_vector(&self) -> glm::Vec3 {

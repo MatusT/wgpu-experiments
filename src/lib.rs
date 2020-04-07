@@ -153,13 +153,13 @@ pub trait ApplicationSkeleton {
 }
 
 pub struct Mesh {
-    vertices: wgpu::Buffer,
-    vertices_len: u32,
+    pub vertices: wgpu::Buffer,
+    pub vertices_len: u32,
 
-    normals: wgpu::Buffer,
+    pub normals: wgpu::Buffer,
 
-    indices: wgpu::Buffer,
-    indices_len: u32,
+    pub indices: wgpu::Buffer,
+    pub indices_len: u32,
 }
 
 impl Mesh {
@@ -183,20 +183,20 @@ impl Mesh {
         self.indices_len
     }
 
-    pub fn from_obj<P: AsRef<Path>>(device: &wgpu::Device, path: P) -> Self {
+    pub fn from_obj<P: AsRef<Path>>(device: &wgpu::Device, path: P, scale: f32) -> Self {
         let file = std::io::BufReader::new(std::fs::File::open(path).unwrap());
         let obj: Obj = load_obj(file).expect("Incorrect .obj file");
 
-        let mut vertices = Vec::new();
+        let mut vertices_cpu = Vec::new();
         for v in obj.vertices.iter() {
-            vertices.push(v.position[0]);
-            vertices.push(v.position[1]);
-            vertices.push(v.position[2]);
+            vertices_cpu.push(v.position[0] * scale);
+            vertices_cpu.push(v.position[1] * scale);
+            vertices_cpu.push(v.position[2] * scale);
         }
-        let vertices_len = vertices.len() as u32;
+        let vertices_len = vertices_cpu.len() as u32;
         let vertices = device
-            .create_buffer_mapped::<f32>(vertices.len(), wgpu::BufferUsage::VERTEX)
-            .fill_from_slice(&vertices);
+            .create_buffer_mapped::<f32>(vertices_cpu.len(), wgpu::BufferUsage::VERTEX)
+            .fill_from_slice(&vertices_cpu);
 
         let mut normals = Vec::new();
         for v in obj.vertices.iter() {

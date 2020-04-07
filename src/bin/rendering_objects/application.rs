@@ -119,13 +119,13 @@ impl Application {
         let billboards_pipeline = SphereBillboardPipeline::new(&device);
 
         let meshes = vec![
-            Mesh::from_obj(&device, "cube.obj"),
-            Mesh::from_obj(&device, "cube.obj"),
-            Mesh::from_obj(&device, "icosahedron_1.obj"),
-            Mesh::from_obj(&device, "icosahedron_2.obj"),
-            Mesh::from_obj(&device, "icosahedron_3.obj"),
-            Mesh::from_obj(&device, "icosahedron_4.obj"),
-            Mesh::from_obj(&device, "icosahedron_5.obj"),
+            Mesh::from_obj(&device, "cube.obj", 1.0),
+            Mesh::from_obj(&device, "cube.obj", 1.0),
+            Mesh::from_obj(&device, "icosahedron_1.obj", 1.0),
+            Mesh::from_obj(&device, "icosahedron_2.obj", 1.0),
+            Mesh::from_obj(&device, "icosahedron_3.obj", 1.0),
+            Mesh::from_obj(&device, "icosahedron_4.obj", 1.0),
+            Mesh::from_obj(&device, "icosahedron_5.obj", 1.0),
         ];
 
         let aspect = width as f32 / height as f32;

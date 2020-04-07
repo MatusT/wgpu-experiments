@@ -1,14 +1,45 @@
+use nalgebra_glm as glm;
+use safe_transmute::*;
 use wgpu;
-
 use wgpu_experiments::camera::*;
-use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
+use wgpu_experiments::pipelines::{boxes::*, mesh::MeshPipeline};
+use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton, Mesh};
 
-use crate::grid;
+use crate::grid::*;
 
 pub struct ApplicationOptions {
     pub render_molecules: bool,
     pub render_grid: bool,
     pub render_aabbs: bool,
+}
+
+pub struct BoxPipelineInput {
+    pub count: u32,
+    pub positions: wgpu::Buffer,
+    pub sizes: wgpu::Buffer,
+    pub colors: wgpu::Buffer,
+}
+
+impl BoxPipelineInput {
+    pub fn new(device: &wgpu::Device, positions: &[f32], sizes: &[f32], colors: &[f32]) -> Self {
+        let count = positions.len() as u32 / 3u32;
+        let positions = device
+            .create_buffer_mapped::<f32>(positions.len(), wgpu::BufferUsage::STORAGE_READ)
+            .fill_from_slice(&positions);
+        let sizes = device
+            .create_buffer_mapped::<f32>(sizes.len(), wgpu::BufferUsage::STORAGE_READ)
+            .fill_from_slice(&sizes);
+        let colors = device
+            .create_buffer_mapped::<f32>(colors.len(), wgpu::BufferUsage::STORAGE_READ)
+            .fill_from_slice(&colors);
+
+        BoxPipelineInput {
+            count,
+            positions,
+            sizes,
+            colors,
+        }
+    }
 }
 
 pub struct Application {
@@ -27,6 +58,22 @@ pub struct Application {
 
     pub camera: RotationCamera,
     pub camera_buffer: wgpu::Buffer,
+
+    // Spheres rendering
+    pub mesh_pipeline: MeshPipeline,
+    pub mesh_bind_group: wgpu::BindGroup,
+    pub mesh: Mesh,
+
+    pub box_pipeline_line: BoxPipeline,
+    pub box_pipeline_filled: BoxPipeline,
+
+    // Enclosing bounding box
+    pub bounding_box: BoxPipelineInput,
+    pub bounding_box_bind_group: wgpu::BindGroup,
+
+    // Grid
+    pub grid: BoxPipelineInput,
+    pub grid_bind_group: wgpu::BindGroup,
 }
 
 impl Application {
@@ -42,8 +89,6 @@ impl Application {
             backends: wgpu::BackendBit::PRIMARY,
         })
         .unwrap();
-
-        println!("{:?}", adapter.get_info().name);
 
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
             extensions: wgpu::Extensions {
@@ -82,6 +127,163 @@ impl Application {
         let multisampled_framebuffer = device.create_texture(multisampled_frame_descriptor).create_default_view();
 
         //
+        let atoms = vec![glm::vec4(1.0, 1.0, 1.0, 1.0), glm::vec4(-1.0, -1.0, -1.0, 1.0)];
+        let mut atom_positions = Vec::new();
+        for atom in atoms.iter() {
+            atom_positions.push(atom.x);
+        }
+        let voxel_grid = VoxelGrid::new(atoms);
+
+        //
+        let mesh = Mesh::from_obj(&device, "icosahedron_3.obj", 1.0);
+        let mesh_positions = device
+            .create_buffer_mapped::<f32>(4, wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST)
+            .fill_from_slice(&[0.0, 0.0, 0.0, 0.0]);
+        let mesh_pipeline = MeshPipeline::new(&device);
+        let mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &mesh_pipeline.bind_group_layout,
+            bindings: &[
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &camera_buffer,
+                        range: 0..192,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &mesh_positions,
+                        range: 0..(4 * std::mem::size_of::<f32>()) as u64,
+                    },
+                },
+            ],
+        });
+
+        let box_pipeline_line = BoxPipeline::new(&device, BoxRendering::Line);
+        let box_pipeline_filled = BoxPipeline::new(&device, BoxRendering::Filled);
+
+        let bounding_box_scale = voxel_grid.bb_diff.abs();
+        let bounding_box = BoxPipelineInput::new(
+            &device,
+            &[0.0, 0.0, 0.0],
+            &[bounding_box_scale.x, bounding_box_scale.y, bounding_box_scale.z],
+            &[1.0, 0.0, 0.0],
+        );
+        let bounding_box_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &box_pipeline_line.bind_group_layout,
+            bindings: &[
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &camera_buffer,
+                        range: 0..192,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &bounding_box.positions,
+                        range: 0..(bounding_box.count as usize * 3usize * std::mem::size_of::<f32>()) as u64,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &bounding_box.sizes,
+                        range: 0..(bounding_box.count as usize * 3usize * std::mem::size_of::<f32>()) as u64,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &bounding_box.colors,
+                        range: 0..(bounding_box.count as usize * 3usize * std::mem::size_of::<f32>()) as u64,
+                    },
+                },
+            ],
+        });
+
+        let grid = {
+            let mut positions: Vec<f32> = Vec::new();
+            let mut sizes: Vec<f32> = Vec::new();
+            let mut colors: Vec<f32> = Vec::new();
+
+            let grid_to_position = |input: glm::TVec3<u32>| -> glm::Vec3 {
+                let input_f32 = glm::vec3(input.x as f32, input.y as f32, input.z as f32);
+                let voxel_center = glm::vec3(
+                    input_f32.x * voxel_grid.voxel_size.x + voxel_grid.voxel_size.x / 2.0,
+                    input_f32.y * voxel_grid.voxel_size.y + voxel_grid.voxel_size.y / 2.0,
+                    input_f32.z * voxel_grid.voxel_size.z + voxel_grid.voxel_size.z / 2.0,
+                );
+
+                voxel_center + voxel_grid.bb_min
+            };
+
+            let grid_3d_to_1d = |input: glm::TVec3<u32>| -> usize {
+                let width = voxel_grid.size as usize;
+                let height = voxel_grid.size as usize;
+                let x = input.x as usize;
+                let y = input.y as usize;
+                let z = input.z as usize;
+    
+                (width * height * z) + (width * y) + x
+            };
+
+            for x in 0..voxel_grid.size {
+                for y in 0..voxel_grid.size {
+                    for z in 0..voxel_grid.size {
+                        let index = glm::vec3(x, y, z);
+                        
+                        if voxel_grid.voxels[grid_3d_to_1d(index)].filled {
+                            let position = grid_to_position(index);
+                            let size = voxel_grid.voxel_size;
+                            let color = glm::vec3(0.0, 0.0, 1.0);
+    
+                            positions.extend_from_slice(&[position.x, position.y, position.z]);
+                            sizes.extend_from_slice(&[size.x, size.y, size.z]);
+                            colors.extend_from_slice(&[color.x, color.y, color.z]);
+                        }
+                    }
+                }
+            }
+
+            BoxPipelineInput::new(&device, &positions, &sizes, &colors)
+        };
+
+        let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &box_pipeline_filled.bind_group_layout,
+            bindings: &[
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &camera_buffer,
+                        range: 0..192,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &grid.positions,
+                        range: 0..(grid.count as usize * 3usize * std::mem::size_of::<f32>()) as u64,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &grid.sizes,
+                        range: 0..(grid.count as usize * 3usize * std::mem::size_of::<f32>()) as u64,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &grid.colors,
+                        range: 0..(grid.count as usize * 3usize * std::mem::size_of::<f32>()) as u64,
+                    },
+                },
+            ],
+        });
 
         Self {
             width,
@@ -97,6 +299,19 @@ impl Application {
 
             camera,
             camera_buffer,
+
+            mesh_pipeline,
+            mesh_bind_group,
+            mesh,
+
+            box_pipeline_line,
+            box_pipeline_filled,
+
+            bounding_box,
+            bounding_box_bind_group,
+
+            grid,
+            grid_bind_group,
         }
     }
 
@@ -122,7 +337,16 @@ impl ApplicationSkeleton for Application {
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
 
         {
-            let rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let size = std::mem::size_of::<CameraUbo>();
+            let camera_buffer = self.device.create_buffer_mapped(size, wgpu::BufferUsage::COPY_SRC);
+            camera_buffer.data.copy_from_slice(transmute_to_bytes(&[self.camera.ubo()]));
+            let camera_buffer = camera_buffer.finish();
+
+            encoder.copy_buffer_to_buffer(&camera_buffer, 0, &self.camera_buffer, 0, size as wgpu::BufferAddress);
+        }
+
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &self.multisampled_framebuffer,
                     resolve_target: Some(frame),
@@ -140,6 +364,14 @@ impl ApplicationSkeleton for Application {
                     clear_stencil: 0,
                 }),
             });
+
+            rpass.set_pipeline(&self.box_pipeline_line.pipeline);
+            rpass.set_bind_group(0, &self.bounding_box_bind_group, &[]);
+            rpass.draw(0..24, 0..1 as u32);
+
+            rpass.set_pipeline(&self.box_pipeline_filled.pipeline);
+            rpass.set_bind_group(0, &self.grid_bind_group, &[]);
+            rpass.draw(0..36, 0..self.grid.count as u32);
         }
 
         self.queue.submit(&[encoder.finish()]);

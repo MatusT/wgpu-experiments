@@ -2,7 +2,7 @@ use crate::application::*;
 use crate::style;
 
 use iced_wgpu::Renderer;
-use iced_winit::{checkbox, Checkbox, Column, Container, Element, Length, Space, Text};
+use iced_winit::{Checkbox, Column, Container, Element, Length, Space, Text};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Message {
