@@ -62,7 +62,7 @@ impl VoxelGrid {
         let bb_diff = bb_max - bb_min;
 
         // Create voxel grid
-        let grid_dimension = 16u32;
+        let grid_dimension = 128u32;
         let grid_size = vec3(grid_dimension, grid_dimension, grid_dimension);
 
         let voxel_size = vec3(
@@ -188,7 +188,7 @@ impl VoxelGrid {
         for global_x in 0..grid_size.x {
             for global_y in 0..grid_size.y {
                 for global_z in 0..grid_size.z {
-                    let mut distance = vec3(0, 0, 0);
+                    let mut distance = vec3(1, 1, 1);
                     let mut inner = [false; 6];
 
                     for x in 0..grid_size.x {
@@ -278,9 +278,7 @@ impl VoxelGrid {
         }
 
         let voxel = voxels[grid_3d_to_1d(max_position)];
-        let occluders = vec![(max_position, max_position + voxel.distance)];
-
-        // println!("Position: {}. SDF: {:?}", max_position, voxels[grid_3d_to_1d(max_position)].distance);
+        let occluders = vec![(max_position, max_position + voxel.distance - glm::vec3(1, 1, 1))];
 
         Self {
             size: grid_dimension,

@@ -298,8 +298,8 @@ impl Application {
             let mut colors: Vec<f32> = Vec::new();
 
             for (bb_min, bb_max) in voxel_grid.occluders.iter() {
-                let bb_max: glm::Vec3 = grid_to_position(*bb_max);
-                let bb_min: glm::Vec3 = grid_to_position(*bb_min);
+                let bb_max: glm::Vec3 = grid_to_position(*bb_max) + voxel_grid.voxel_size * 0.5;
+                let bb_min: glm::Vec3 = grid_to_position(*bb_min) - voxel_grid.voxel_size * 0.5;
 
                 let position = (bb_max + bb_min) * 0.5;
                 let size = (bb_max - bb_min).abs();
@@ -435,12 +435,16 @@ impl ApplicationSkeleton for Application {
             rpass.set_bind_group(0, &self.bounding_box_bind_group, &[]);
             rpass.draw(0..24, 0..1 as u32);
 
-            rpass.set_bind_group(0, &self.grid_bind_group, &[]);
-            rpass.draw(0..24, 0..self.grid.count as u32);
+            if self.options.render_grid {
+                rpass.set_bind_group(0, &self.grid_bind_group, &[]);
+                rpass.draw(0..24, 0..self.grid.count as u32);
+            }
 
-            rpass.set_pipeline(&self.box_pipeline_filled.pipeline);
-            rpass.set_bind_group(0, &self.occluders_bind_group, &[]);
-            rpass.draw(0..36, 0..self.occluders.count as u32);
+            if self.options.render_aabbs {
+                rpass.set_pipeline(&self.box_pipeline_filled.pipeline);
+                rpass.set_bind_group(0, &self.occluders_bind_group, &[]);
+                rpass.draw(0..36, 0..self.occluders.count as u32);
+            }
         }
 
         self.queue.submit(&[encoder.finish()]);

@@ -73,7 +73,9 @@ impl Camera for RotationCamera {
         match event {
             ApplicationEvent::MouseWheel { delta, .. } => {
                 if let winit::event::MouseScrollDelta::LineDelta(_, change) = delta {
+                    // if self.distance + change * self.speed >= 0.0 {
                     self.distance += change * self.speed;
+                    // }
                 }
             }
             ApplicationEvent::MouseInput { state, button, .. } => {
