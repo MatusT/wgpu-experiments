@@ -13,7 +13,7 @@ pub struct VoxelGrid {
 
     pub occluders: Vec<(glm::TVec3<u32>, glm::TVec3<u32>)>,
 }
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Voxel {
     pub filled: bool,
 
@@ -34,8 +34,6 @@ pub enum Round {
     Floor,
     Ceil,
 }
-
-pub struct Occluder {}
 
 impl VoxelGrid {
     pub fn new(mut atoms: Vec<glm::Vec4>) -> Self {
@@ -62,7 +60,7 @@ impl VoxelGrid {
         let bb_diff = bb_max - bb_min;
 
         // Create voxel grid
-        let grid_dimension = 128u32;
+        let grid_dimension = 16u32;
         let grid_size = vec3(grid_dimension, grid_dimension, grid_dimension);
 
         let voxel_size = vec3(
@@ -243,42 +241,109 @@ impl VoxelGrid {
         }
 
         // Compute largest bounding box
-        let mut max_position = glm::vec3(0, 0, 0);
-        let mut max_area = 0;
-        for voxel_index in 0..grid_vec_size {
-            use std::cmp::min;
+        // let voxels_return = voxels.clone();
 
-            let voxel = voxels[voxel_index];
+        let occluders_limit = 8;
+        let mut occluders = Vec::new();
+        for occluder_n in 0..occluders_limit {
+            println!("Occluder number: {}", occluder_n);
 
-            if !voxel.filled {
-                continue;
-            }
+            let mut max_position = glm::vec3(0, 0, 0);
+            let mut max_area = 0;
 
-            let position = grid_1d_to_3d(voxel_index);
-            let distance = voxel.distance;
+            for voxel_index in 0..grid_vec_size {
+                use std::cmp::min;
 
-            let mut min_x = distance.x;
-            for d_y in 0..distance.y {
-                min_x = min(min_x, voxels[grid_3d_to_1d(position + vec3(0, d_y, 0))].distance.x);
+                let voxel = voxels[voxel_index];
 
-                let mut min_z = distance.z;
-                for x in 0..min_x {
-                    for y in 0..d_y {
-                        min_z = min(min_z, voxels[grid_3d_to_1d(position + vec3(x, y, 0))].distance.z);
+                if !voxel.filled {
+                    continue;
+                }
 
-                        let area = min_x * d_y * min_z;
+                let position = grid_1d_to_3d(voxel_index);
+                let distance = voxel.distance;
 
-                        if area > max_area {
-                            max_area = area;
-                            max_position = position;
+                let mut min_x = distance.x;
+                for d_y in 0..distance.y {
+                    min_x = min(min_x, voxels[grid_3d_to_1d(position + vec3(0, d_y, 0))].distance.x);
+
+                    let mut min_z = distance.z;
+                    for x in 0..min_x {
+                        for y in 0..d_y {
+                            min_z = min(min_z, voxels[grid_3d_to_1d(position + vec3(x, y, 0))].distance.z);
+
+                            let area = min_x * d_y * min_z;
+
+                            if area > max_area {
+                                max_area = area;
+                                max_position = position;
+                            }
                         }
                     }
                 }
             }
-        }
 
-        let voxel = voxels[grid_3d_to_1d(max_position)];
-        let occluders = vec![(max_position, max_position + voxel.distance - glm::vec3(1, 1, 1))];
+            if max_area == 0 {
+                continue;
+            }
+
+            let voxel = voxels[grid_3d_to_1d(max_position)];
+            println!("{:?} {:?}", max_position, voxel);
+
+            // Nullify voxels of found AABB
+            for x in 0..voxel.distance.x {
+                for y in 0..voxel.distance.y {
+                    for z in 0..voxel.distance.z {
+                        voxels[grid_3d_to_1d(max_position + vec3(x, y, z))].filled = false;
+                    }
+                }
+            }
+
+            // Recalculate SDF
+            for global_x in 0..grid_size.x {
+                for global_y in 0..grid_size.y {
+                    for global_z in 0..grid_size.z {
+                        let mut distance = vec3(1, 1, 1);
+    
+                        for x in 0..grid_size.x {    
+                            if x > global_x {
+                                if voxels[grid_3d_to_1d(vec3(x, global_y, global_z))].filled {
+                                    distance.x += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+    
+                        for y in 0..grid_size.y {
+                            if y > global_y {
+                                if voxels[grid_3d_to_1d(vec3(global_x, y, global_z))].filled {
+                                    distance.y += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+    
+                        for z in 0..grid_size.z {
+                            if z > global_z {
+                                if voxels[grid_3d_to_1d(vec3(global_x, global_y, z))].filled {
+                                    distance.z += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+    
+                        voxels[grid_3d_to_1d(vec3(global_x, global_y, global_z))].distance = distance;
+                    }
+                }
+            }
+
+
+            occluders.push((max_position, max_position + voxel.distance - glm::vec3(1, 1, 1)));
+        }
+        
 
         Self {
             size: grid_dimension,

@@ -4,6 +4,7 @@ use wgpu;
 use wgpu_experiments::camera::*;
 use wgpu_experiments::pipelines::{boxes::*, mesh::MeshPipeline};
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton, Mesh};
+use rand::Rng;
 
 use crate::grid::*;
 
@@ -297,6 +298,8 @@ impl Application {
             let mut sizes: Vec<f32> = Vec::new();
             let mut colors: Vec<f32> = Vec::new();
 
+            let mut rng = rand::thread_rng();
+
             for (bb_min, bb_max) in voxel_grid.occluders.iter() {
                 let bb_max: glm::Vec3 = grid_to_position(*bb_max) + voxel_grid.voxel_size * 0.5;
                 let bb_min: glm::Vec3 = grid_to_position(*bb_min) - voxel_grid.voxel_size * 0.5;
@@ -307,7 +310,7 @@ impl Application {
 
                 positions.extend_from_slice(&[position.x, position.y, position.z, 1.0]);
                 sizes.extend_from_slice(&[size.x, size.y, size.z, 1.0]);
-                colors.extend_from_slice(&[color.x, color.y, color.z, 1.0]);
+                colors.extend_from_slice(&[rng.gen::<f32>(), rng.gen::<f32>(), rng.gen::<f32>(), 1.0]);
             }
 
             BoxPipelineInput::new(&device, &positions, &sizes, &colors)
