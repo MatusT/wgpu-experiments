@@ -22,7 +22,7 @@ pub struct BoxPipelineInput {
 
 impl BoxPipelineInput {
     pub fn new(device: &wgpu::Device, positions: &[f32], sizes: &[f32], colors: &[f32]) -> Self {
-        let count = positions.len() as u32 / 3u32;
+        let count = positions.len() as u32 / 4u32;
         let positions = device
             .create_buffer_mapped::<f32>(positions.len(), wgpu::BufferUsage::STORAGE_READ)
             .fill_from_slice(&positions);
@@ -74,10 +74,15 @@ pub struct Application {
     // Grid
     pub grid: BoxPipelineInput,
     pub grid_bind_group: wgpu::BindGroup,
+
+    // Occluders,
+    pub occluders: BoxPipelineInput,
+    pub occluders_bind_group: wgpu::BindGroup,
 }
 
 impl Application {
     pub fn new(width: u32, height: u32) -> Self {
+        use wgpu::{Binding, BindingResource};
         let options = ApplicationOptions {
             render_molecules: true,
             render_grid: false,
@@ -166,10 +171,11 @@ impl Application {
         let bounding_box_scale = voxel_grid.bb_diff.abs();
         let bounding_box = BoxPipelineInput::new(
             &device,
-            &[0.0, 0.0, 0.0],
-            &[bounding_box_scale.x, bounding_box_scale.y, bounding_box_scale.z],
-            &[1.0, 0.0, 0.0],
+            &[0.0, 0.0, 0.0, 1.0],
+            &[bounding_box_scale.x, bounding_box_scale.y, bounding_box_scale.z, 1.0],
+            &[1.0, 0.0, 0.0, 1.0],
         );
+        let bounding_box_buffer_size = (bounding_box.count as usize * 4usize * std::mem::size_of::<f32>()) as u64;
         let bounding_box_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &box_pipeline_line.bind_group_layout,
             bindings: &[
@@ -184,65 +190,65 @@ impl Application {
                     binding: 1,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &bounding_box.positions,
-                        range: 0..(bounding_box.count as usize * 3usize * std::mem::size_of::<f32>()) as u64,
+                        range: 0..bounding_box_buffer_size,
                     },
                 },
                 wgpu::Binding {
                     binding: 2,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &bounding_box.sizes,
-                        range: 0..(bounding_box.count as usize * 3usize * std::mem::size_of::<f32>()) as u64,
+                        range: 0..bounding_box_buffer_size,
                     },
                 },
                 wgpu::Binding {
                     binding: 3,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &bounding_box.colors,
-                        range: 0..(bounding_box.count as usize * 3usize * std::mem::size_of::<f32>()) as u64,
+                        range: 0..bounding_box_buffer_size,
                     },
                 },
             ],
         });
+
+        let grid_to_position = |input: glm::TVec3<u32>| -> glm::Vec3 {
+            let input_f32 = glm::vec3(input.x as f32, input.y as f32, input.z as f32);
+            let voxel_center = glm::vec3(
+                input_f32.x * voxel_grid.voxel_size.x + voxel_grid.voxel_size.x / 2.0,
+                input_f32.y * voxel_grid.voxel_size.y + voxel_grid.voxel_size.y / 2.0,
+                input_f32.z * voxel_grid.voxel_size.z + voxel_grid.voxel_size.z / 2.0,
+            );
+
+            voxel_center + voxel_grid.bb_min
+        };
+
+        let grid_3d_to_1d = |input: glm::TVec3<u32>| -> usize {
+            let width = voxel_grid.size as usize;
+            let height = voxel_grid.size as usize;
+            let x = input.x as usize;
+            let y = input.y as usize;
+            let z = input.z as usize;
+
+            (width * height * z) + (width * y) + x
+        };
 
         let grid = {
             let mut positions: Vec<f32> = Vec::new();
             let mut sizes: Vec<f32> = Vec::new();
             let mut colors: Vec<f32> = Vec::new();
 
-            let grid_to_position = |input: glm::TVec3<u32>| -> glm::Vec3 {
-                let input_f32 = glm::vec3(input.x as f32, input.y as f32, input.z as f32);
-                let voxel_center = glm::vec3(
-                    input_f32.x * voxel_grid.voxel_size.x + voxel_grid.voxel_size.x / 2.0,
-                    input_f32.y * voxel_grid.voxel_size.y + voxel_grid.voxel_size.y / 2.0,
-                    input_f32.z * voxel_grid.voxel_size.z + voxel_grid.voxel_size.z / 2.0,
-                );
-
-                voxel_center + voxel_grid.bb_min
-            };
-
-            let grid_3d_to_1d = |input: glm::TVec3<u32>| -> usize {
-                let width = voxel_grid.size as usize;
-                let height = voxel_grid.size as usize;
-                let x = input.x as usize;
-                let y = input.y as usize;
-                let z = input.z as usize;
-    
-                (width * height * z) + (width * y) + x
-            };
-
             for x in 0..voxel_grid.size {
                 for y in 0..voxel_grid.size {
                     for z in 0..voxel_grid.size {
                         let index = glm::vec3(x, y, z);
-                        
+
                         if voxel_grid.voxels[grid_3d_to_1d(index)].filled {
                             let position = grid_to_position(index);
                             let size = voxel_grid.voxel_size;
                             let color = glm::vec3(0.0, 0.0, 1.0);
-    
-                            positions.extend_from_slice(&[position.x, position.y, position.z]);
-                            sizes.extend_from_slice(&[size.x, size.y, size.z]);
-                            colors.extend_from_slice(&[color.x, color.y, color.z]);
+
+                            positions.extend_from_slice(&[position.x, position.y, position.z, 1.0]);
+                            sizes.extend_from_slice(&[size.x, size.y, size.z, 1.0]);
+                            colors.extend_from_slice(&[color.x, color.y, color.z, 1.0]);
                         }
                     }
                 }
@@ -251,35 +257,92 @@ impl Application {
             BoxPipelineInput::new(&device, &positions, &sizes, &colors)
         };
 
+        let grid_buffer_size = (grid.count as usize * 4usize * std::mem::size_of::<f32>()) as u64;
         let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &box_pipeline_filled.bind_group_layout,
+            layout: &box_pipeline_line.bind_group_layout,
             bindings: &[
-                wgpu::Binding {
+                Binding {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
+                    resource: BindingResource::Buffer {
                         buffer: &camera_buffer,
                         range: 0..192,
                     },
                 },
-                wgpu::Binding {
+                Binding {
                     binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
+                    resource: BindingResource::Buffer {
                         buffer: &grid.positions,
-                        range: 0..(grid.count as usize * 3usize * std::mem::size_of::<f32>()) as u64,
+                        range: 0..grid_buffer_size,
                     },
                 },
-                wgpu::Binding {
+                Binding {
                     binding: 2,
-                    resource: wgpu::BindingResource::Buffer {
+                    resource: BindingResource::Buffer {
                         buffer: &grid.sizes,
-                        range: 0..(grid.count as usize * 3usize * std::mem::size_of::<f32>()) as u64,
+                        range: 0..grid_buffer_size,
                     },
                 },
-                wgpu::Binding {
+                Binding {
                     binding: 3,
-                    resource: wgpu::BindingResource::Buffer {
+                    resource: BindingResource::Buffer {
                         buffer: &grid.colors,
-                        range: 0..(grid.count as usize * 3usize * std::mem::size_of::<f32>()) as u64,
+                        range: 0..grid_buffer_size,
+                    },
+                },
+            ],
+        });
+
+        let occluders = {
+            let mut positions: Vec<f32> = Vec::new();
+            let mut sizes: Vec<f32> = Vec::new();
+            let mut colors: Vec<f32> = Vec::new();
+
+            for (bb_min, bb_max) in voxel_grid.occluders.iter() {
+                let bb_max: glm::Vec3 = grid_to_position(*bb_max);
+                let bb_min: glm::Vec3 = grid_to_position(*bb_min);
+
+                let position = (bb_max + bb_min) * 0.5;
+                let size = (bb_max - bb_min).abs();
+                let color = glm::vec3(0.0, 1.0, 0.0);
+
+                positions.extend_from_slice(&[position.x, position.y, position.z, 1.0]);
+                sizes.extend_from_slice(&[size.x, size.y, size.z, 1.0]);
+                colors.extend_from_slice(&[color.x, color.y, color.z, 1.0]);
+            }
+
+            BoxPipelineInput::new(&device, &positions, &sizes, &colors)
+        };
+
+        let occluders_buffer_size = (occluders.count as usize * 4usize * std::mem::size_of::<f32>()) as u64;
+        let occluders_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &box_pipeline_filled.bind_group_layout,
+            bindings: &[
+                Binding {
+                    binding: 0,
+                    resource: BindingResource::Buffer {
+                        buffer: &camera_buffer,
+                        range: 0..192,
+                    },
+                },
+                Binding {
+                    binding: 1,
+                    resource: BindingResource::Buffer {
+                        buffer: &occluders.positions,
+                        range: 0..occluders_buffer_size,
+                    },
+                },
+                Binding {
+                    binding: 2,
+                    resource: BindingResource::Buffer {
+                        buffer: &occluders.sizes,
+                        range: 0..occluders_buffer_size,
+                    },
+                },
+                Binding {
+                    binding: 3,
+                    resource: BindingResource::Buffer {
+                        buffer: &occluders.colors,
+                        range: 0..occluders_buffer_size,
                     },
                 },
             ],
@@ -312,6 +375,9 @@ impl Application {
 
             grid,
             grid_bind_group,
+
+            occluders,
+            occluders_bind_group,
         }
     }
 
@@ -369,9 +435,12 @@ impl ApplicationSkeleton for Application {
             rpass.set_bind_group(0, &self.bounding_box_bind_group, &[]);
             rpass.draw(0..24, 0..1 as u32);
 
-            rpass.set_pipeline(&self.box_pipeline_filled.pipeline);
             rpass.set_bind_group(0, &self.grid_bind_group, &[]);
-            rpass.draw(0..36, 0..self.grid.count as u32);
+            rpass.draw(0..24, 0..self.grid.count as u32);
+
+            rpass.set_pipeline(&self.box_pipeline_filled.pipeline);
+            rpass.set_bind_group(0, &self.occluders_bind_group, &[]);
+            rpass.draw(0..36, 0..self.occluders.count as u32);
         }
 
         self.queue.submit(&[encoder.finish()]);
