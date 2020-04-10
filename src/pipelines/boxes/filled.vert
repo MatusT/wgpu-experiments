@@ -12,15 +12,15 @@ layout(set = 0, binding = 3, std430) buffer Colors { vec4 colors[]; };
 
 const vec3 vertices[8] = {
     // front
-    vec3(-1.0, -1.0,  1.0),
-    vec3( 1.0, -1.0,  1.0),
-    vec3( 1.0,  1.0,  1.0),
-    vec3(-1.0,  1.0,  1.0),
+    vec3(-0.5, -0.5,  0.5),
+    vec3( 0.5, -0.5,  0.5),
+    vec3( 0.5,  0.5,  0.5),
+    vec3(-0.5,  0.5,  0.5),
     // back
-    vec3(-1.0, -1.0, -1.0),
-    vec3( 1.0, -1.0, -1.0),
-    vec3( 1.0,  1.0, -1.0),
-    vec3(-1.0,  1.0, -1.0)
+    vec3(-0.5, -0.5, -0.5),
+    vec3( 0.5, -0.5, -0.5),
+    vec3( 0.5,  0.5, -0.5),
+    vec3(-0.5,  0.5, -0.5)
 };
 
 const int indices[36] = {
@@ -52,5 +52,5 @@ void main(void)
   const vec3 scale = sizes[gl_InstanceIndex].xyz;
 
   vs_color = colors[gl_InstanceIndex].rgb;
-  gl_Position = projection_view * vec4((center + vertices[indices[gl_VertexIndex % 36]] * 0.5 * scale), 1.0);
+  gl_Position = projection_view * vec4((center + vertices[indices[gl_VertexIndex % 36]] * scale), 1.0);
 }

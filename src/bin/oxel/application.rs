@@ -1,10 +1,11 @@
+use lib3dmol::structures::{atom::AtomType, GetAtom};
 use nalgebra_glm as glm;
+use rand::Rng;
 use safe_transmute::*;
 use wgpu;
 use wgpu_experiments::camera::*;
 use wgpu_experiments::pipelines::{boxes::*, mesh::MeshPipeline};
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton, Mesh};
-use rand::Rng;
 
 use crate::grid::*;
 
@@ -64,6 +65,7 @@ pub struct Application {
     pub mesh_pipeline: MeshPipeline,
     pub mesh_bind_group: wgpu::BindGroup,
     pub mesh: Mesh,
+    pub atoms_len: u32,
 
     pub box_pipeline_line: BoxPipeline,
     pub box_pipeline_filled: BoxPipeline,
@@ -133,18 +135,36 @@ impl Application {
         let multisampled_framebuffer = device.create_texture(multisampled_frame_descriptor).create_default_view();
 
         //
-        let atoms = vec![glm::vec4(1.0, 1.0, 1.0, 1.0), glm::vec4(-1.0, -1.0, -1.0, 1.0)];
-        let mut atom_positions = Vec::new();
-        for atom in atoms.iter() {
-            atom_positions.push(atom.x);
+        let args: Vec<String> = std::env::args().collect();
+        let file_name: &str = &args[1];
+        let molecule_structure = lib3dmol::parser::read_pdb(file_name, "");
+        let mut atoms = Vec::new();
+        for atom in molecule_structure.get_atom() {
+            let radius = match atom.a_type {
+                AtomType::Carbon => 1.548,
+                AtomType::Hydrogen => 1.100,
+                AtomType::Nitrogen => 1.400,
+                AtomType::Oxygen => 1.348,
+                _ => 1.0,
+                // 'P': 1.880,
+                // 'S': 1.880,
+                // 'A': 1.5
+            };
+            atoms.push(glm::vec4(atom.coord[0], atom.coord[1], atom.coord[2], radius));
         }
-        let voxel_grid = VoxelGrid::new(atoms);
+        let atoms_len = atoms.len();
+
+        let voxel_grid = VoxelGrid::new(&mut atoms);
+        let mut atoms_f32 = Vec::new();
+        for atom in atoms.iter() {
+            atoms_f32.extend_from_slice(&[atom.x, atom.y, atom.z, atom.w]);
+        }
 
         //
-        let mesh = Mesh::from_obj(&device, "icosahedron_3.obj", 1.0);
+        let mesh = Mesh::from_obj(&device, "icosahedron_3.obj", 2.0);
         let mesh_positions = device
-            .create_buffer_mapped::<f32>(4, wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST)
-            .fill_from_slice(&[0.0, 0.0, 0.0, 0.0]);
+            .create_buffer_mapped::<f32>(4 * atoms_len, wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST)
+            .fill_from_slice(&atoms_f32);
         let mesh_pipeline = MeshPipeline::new(&device);
         let mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &mesh_pipeline.bind_group_layout,
@@ -160,7 +180,7 @@ impl Application {
                     binding: 1,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &mesh_positions,
-                        range: 0..(4 * std::mem::size_of::<f32>()) as u64,
+                        range: 0..(4 * atoms_len * std::mem::size_of::<f32>()) as u64,
                     },
                 },
             ],
@@ -242,14 +262,14 @@ impl Application {
                     for z in 0..voxel_grid.size {
                         let index = glm::vec3(x, y, z);
 
-                        if voxel_grid.voxels[grid_3d_to_1d(index)].filled {
+                        if voxel_grid.voxels[grid_3d_to_1d(index)] {
                             let position = grid_to_position(index);
                             let size = voxel_grid.voxel_size;
-                            let color = glm::vec3(0.0, 0.0, 1.0);
+                            let color = voxel_grid.sdf[grid_3d_to_1d(index)].x as f32 / 256.0; // glm::vec3(0.0, 0.0, 1.0);
 
                             positions.extend_from_slice(&[position.x, position.y, position.z, 1.0]);
                             sizes.extend_from_slice(&[size.x, size.y, size.z, 1.0]);
-                            colors.extend_from_slice(&[color.x, color.y, color.z, 1.0]);
+                            colors.extend_from_slice(&[color, color, color, 1.0]);
                         }
                     }
                 }
@@ -260,7 +280,7 @@ impl Application {
 
         let grid_buffer_size = (grid.count as usize * 4usize * std::mem::size_of::<f32>()) as u64;
         let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &box_pipeline_line.bind_group_layout,
+            layout: &box_pipeline_filled.bind_group_layout,
             bindings: &[
                 Binding {
                     binding: 0,
@@ -369,6 +389,7 @@ impl Application {
             mesh_pipeline,
             mesh_bind_group,
             mesh,
+            atoms_len: atoms_len as u32,
 
             box_pipeline_line,
             box_pipeline_filled,
@@ -438,9 +459,18 @@ impl ApplicationSkeleton for Application {
             rpass.set_bind_group(0, &self.bounding_box_bind_group, &[]);
             rpass.draw(0..24, 0..1 as u32);
 
+            if self.options.render_molecules {
+                rpass.set_pipeline(&self.mesh_pipeline.pipeline);
+                rpass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                rpass.set_vertex_buffers(0, &[(&self.mesh.vertices(), 0), (&self.mesh.normals(), 0)]);
+                rpass.set_index_buffer(&self.mesh.indices(), 0);
+                rpass.draw_indexed(0..self.mesh.indices_len(), 0, 0..self.atoms_len);
+            }
+
             if self.options.render_grid {
+                rpass.set_pipeline(&self.box_pipeline_filled.pipeline);
                 rpass.set_bind_group(0, &self.grid_bind_group, &[]);
-                rpass.draw(0..24, 0..self.grid.count as u32);
+                rpass.draw(0..36, 0..self.grid.count as u32);
             }
 
             if self.options.render_aabbs {

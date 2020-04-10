@@ -31,7 +31,7 @@ pub struct RotationCamera {
 
 impl RotationCamera {
     pub fn new(aspect: f32, fov: f32, near: f32) -> RotationCamera {
-        let distance = 1.0;
+        let distance = -2.0;
         let projection = glm::reversed_infinite_perspective_rh_zo(aspect, fov, near);
 
         let mut camera = RotationCamera {
@@ -43,7 +43,7 @@ impl RotationCamera {
 
             yaw: -90.0,
             pitch: 0.0,
-            distance: 1.0,
+            distance,
 
             speed: 1.0,
             mouse_pressed: false,
@@ -73,9 +73,7 @@ impl Camera for RotationCamera {
         match event {
             ApplicationEvent::MouseWheel { delta, .. } => {
                 if let winit::event::MouseScrollDelta::LineDelta(_, change) = delta {
-                    // if self.distance + change * self.speed >= 0.0 {
                     self.distance += change * self.speed;
-                    // }
                 }
             }
             ApplicationEvent::MouseInput { state, button, .. } => {

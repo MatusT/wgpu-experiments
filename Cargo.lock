@@ -2521,6 +2521,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "criterion",
+ "crossbeam-utils",
  "glsl-to-spirv",
  "iced",
  "iced_native",

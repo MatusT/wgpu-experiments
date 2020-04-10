@@ -19,5 +19,5 @@ out gl_PerVertex { vec4 gl_Position; };
 
 void main() { 
   out_normal = in_normal;
-  gl_Position = projection_view * (vec4(in_position, 1.0) + position[gl_InstanceIndex]); 
+  gl_Position = projection_view * vec4(in_position * position[gl_InstanceIndex].w + position[gl_InstanceIndex].xyz, 1.0); 
 }

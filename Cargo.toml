@@ -18,6 +18,7 @@ obj-rs = "0.5.0"
 bytemuck = { version = "1.2", features = ["extern_crate_alloc"] }
 safe-transmute = { git = "https://github.com/nabijaczleweli/safe-transmute-rs" }
 lib3dmol = "0.3.2"
+crossbeam-utils = "0.7"
 
 iced = { git ="https://github.com/hecrj/iced" }
 iced_wgpu = { git = "https://github.com/hecrj/iced" }
