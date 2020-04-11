@@ -231,7 +231,7 @@ impl Application {
             ],
         });
 
-        let grid_to_position = |input: glm::TVec3<u32>| -> glm::Vec3 {
+        let grid_to_position = |input: glm::TVec3<i32>| -> glm::Vec3 {
             let input_f32 = glm::vec3(input.x as f32, input.y as f32, input.z as f32);
             let voxel_center = glm::vec3(
                 input_f32.x * voxel_grid.voxel_size.x + voxel_grid.voxel_size.x / 2.0,
@@ -242,7 +242,7 @@ impl Application {
             voxel_center + voxel_grid.bb_min
         };
 
-        let grid_3d_to_1d = |input: glm::TVec3<u32>| -> usize {
+        let grid_3d_to_1d = |input: glm::TVec3<i32>| -> usize {
             let width = voxel_grid.size as usize;
             let height = voxel_grid.size as usize;
             let x = input.x as usize;
@@ -252,6 +252,8 @@ impl Application {
             (width * height * z) + (width * y) + x
         };
 
+        let mut rng = rand::thread_rng();
+
         let grid = {
             let mut positions: Vec<f32> = Vec::new();
             let mut sizes: Vec<f32> = Vec::new();
@@ -260,16 +262,16 @@ impl Application {
             for x in 0..voxel_grid.size {
                 for y in 0..voxel_grid.size {
                     for z in 0..voxel_grid.size {
-                        let index = glm::vec3(x, y, z);
+                        let index = glm::vec3(x as i32, y as i32, z as i32);
 
                         if voxel_grid.voxels[grid_3d_to_1d(index)] {
                             let position = grid_to_position(index);
                             let size = voxel_grid.voxel_size;
-                            let color = voxel_grid.sdf[grid_3d_to_1d(index)].x as f32 / 256.0; // glm::vec3(0.0, 0.0, 1.0);
+                            let color = glm::vec3(0.0, 0.0, 1.0);
 
                             positions.extend_from_slice(&[position.x, position.y, position.z, 1.0]);
                             sizes.extend_from_slice(&[size.x, size.y, size.z, 1.0]);
-                            colors.extend_from_slice(&[color, color, color, 1.0]);
+                            colors.extend_from_slice(&[color.x, color.y, color.z, 1.0]);
                         }
                     }
                 }
@@ -280,7 +282,7 @@ impl Application {
 
         let grid_buffer_size = (grid.count as usize * 4usize * std::mem::size_of::<f32>()) as u64;
         let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &box_pipeline_filled.bind_group_layout,
+            layout: &box_pipeline_line.bind_group_layout,
             bindings: &[
                 Binding {
                     binding: 0,
@@ -317,8 +319,6 @@ impl Application {
             let mut positions: Vec<f32> = Vec::new();
             let mut sizes: Vec<f32> = Vec::new();
             let mut colors: Vec<f32> = Vec::new();
-
-            let mut rng = rand::thread_rng();
 
             for (bb_min, bb_max) in voxel_grid.occluders.iter() {
                 let bb_max: glm::Vec3 = grid_to_position(*bb_max) + voxel_grid.voxel_size * 0.5;
@@ -468,9 +468,9 @@ impl ApplicationSkeleton for Application {
             }
 
             if self.options.render_grid {
-                rpass.set_pipeline(&self.box_pipeline_filled.pipeline);
+                rpass.set_pipeline(&self.box_pipeline_line.pipeline);
                 rpass.set_bind_group(0, &self.grid_bind_group, &[]);
-                rpass.draw(0..36, 0..self.grid.count as u32);
+                rpass.draw(0..24, 0..self.grid.count as u32);
             }
 
             if self.options.render_aabbs {
