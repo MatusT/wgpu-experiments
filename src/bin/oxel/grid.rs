@@ -300,8 +300,8 @@ impl VoxelGrid {
 
         println!("SDF computation time: {}", start.elapsed().as_secs_f64());
 
-        // Compute largest bounding box        
-        let occluders_limit = 16;
+        // Compute largest bounding box
+        let occluders_limit = 0;
         let mut occluders = Vec::new();
 
         for _ in 0..occluders_limit {
@@ -311,6 +311,7 @@ impl VoxelGrid {
             let mut max_position = glm::vec3(0, 0, 0);
             let mut max_extent = glm::vec3(0, 0, 0);
 
+            /*
             for voxel_index in 0..grid_vec_size {
                 use std::cmp::min;
 
@@ -386,8 +387,55 @@ impl VoxelGrid {
 
                 break;
             }
-            
-            // Clean the inner voxels 
+            */
+
+            for voxel_index in 0..grid_vec_size {
+                use std::cmp::min;
+
+                let voxel = voxels[voxel_index];
+
+                if !voxel {
+                    continue;
+                }
+
+                let position = grid_1d_to_3d(voxel_index);
+                let distance = sdf[voxel_index];
+
+                let mut min_x = std::i32::MAX;
+                for d_y in 0..distance.y {
+                    min_x = min(min_x, sdf[grid_3d_to_1d(position + vec3(0, d_y, 0))].x);
+
+                    let mut min_z = std::i32::MAX;
+                    for y in 0..d_y {
+                        for x in 0..min_x {
+                            min_z = min(min_z, sdf[grid_3d_to_1d(position + vec3(x, y, 0))].z);
+                        }
+                    }
+
+                    let volume = min_x * d_y * min_z;
+
+                    if volume > max_volume {
+                        max_volume = volume;
+                        max_position = position;
+                        max_extent = vec3(min_x, d_y, min_z);
+                    }
+                }
+            }
+
+            // Verify occluder
+            /*
+            for x in max_position.x..max_position.x + max_extent.x {
+                for y in max_position.y..max_position.y + max_extent.y {
+                    for z in max_position.z..max_position.z + max_extent.z {
+                        if voxels[grid_3d_to_1d(vec3(x, y, z))] == false {
+                            panic!("Should not happen");
+                        }
+                    }
+                }
+            }
+            */
+
+            // Clean the inner voxels
             for x in max_position.x..=max_position.x + max_extent.x {
                 for y in max_position.y..=max_position.y + max_extent.y {
                     for z in max_position.z..=max_position.z + max_extent.z {
@@ -400,7 +448,7 @@ impl VoxelGrid {
             for x in 0..grid_dimension {
                 for y in 0..grid_dimension {
                     let mut count: i32 = 1;
-    
+
                     for z in (0..grid_dimension).rev() {
                         if voxels[grid_3d_to_1d(glm::vec3(x, y, z))] {
                             sdf[grid_3d_to_1d(glm::vec3(x, y, z))].z = count;
@@ -411,11 +459,11 @@ impl VoxelGrid {
                     }
                 }
             }
-    
+
             for y in 0..grid_dimension {
                 for z in 0..grid_dimension {
                     let mut count: i32 = 1;
-    
+
                     for x in (0..grid_dimension).rev() {
                         if voxels[grid_3d_to_1d(glm::vec3(x, y, z))] {
                             sdf[grid_3d_to_1d(glm::vec3(x, y, z))].x = count;
@@ -426,11 +474,11 @@ impl VoxelGrid {
                     }
                 }
             }
-    
+
             for z in 0..grid_dimension {
                 for x in 0..grid_dimension {
                     let mut count: i32 = 1;
-    
+
                     for y in (0..grid_dimension).rev() {
                         if voxels[grid_3d_to_1d(glm::vec3(x, y, z))] {
                             sdf[grid_3d_to_1d(glm::vec3(x, y, z))].y = count;
