@@ -26,6 +26,8 @@ iced_winit = { git = "https://github.com/hecrj/iced" }
 iced_native = { git = "https://github.com/hecrj/iced" }
 iced_style = { git = "https://github.com/hecrj/iced" }
 
+lyon = { version = "0.15", features = ["svg", "extra"] }
+
 [dev-dependencies]
 criterion = "0.3"
 

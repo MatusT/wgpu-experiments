@@ -41,13 +41,15 @@ const int[24] indices = {
     2,1
 };
 
-layout(location = 0) out vec3 vs_color;
+layout(location = 0) out vec3 vs_ws_position;
+layout(location = 1) out vec3 vs_color;
 
 void main(void)
 {
   const vec3 center = positions[gl_InstanceIndex].xyz;
   const vec3 scale = sizes[gl_InstanceIndex].xyz;
 
+  vs_ws_position = (center + vertices[indices[gl_VertexIndex % 24]] * scale);
   vs_color = colors[gl_InstanceIndex].rgb;
-  gl_Position = projection_view * vec4((center + vertices[indices[gl_VertexIndex % 24]] * scale), 1.0);
+  gl_Position = projection_view * vec4(vs_ws_position, 1.0);
 }

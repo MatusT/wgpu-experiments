@@ -6,9 +6,13 @@ layout(set = 0, binding = 0, std140) uniform CameraMatrices {
   mat4 projection_view;
 };
 
-layout(set = 0, binding = 1, std430) buffer Positions { vec4 positions[]; };
-layout(set = 0, binding = 2, std430) buffer Sizes { vec4 sizes[]; };
-layout(set = 0, binding = 3, std430) buffer Colors { vec4 colors[]; };
+layout(set = 0, binding = 1, std140) uniform ClipPlane {
+    vec4 position;
+    vec4 normal;
+} clip;
+
+layout(set = 0, binding = 2, std430) buffer Positions { vec4 positions[]; };
+layout(set = 0, binding = 3, std430) buffer Sizes { vec4 sizes[]; };
 
 const vec3 vertices[8] = {
     // front
@@ -45,7 +49,6 @@ const int indices[36] = {
 };
 
 layout(location = 0) out vec3 vs_ws_position;
-layout(location = 1) out vec3 vs_color;
 
 void main(void)
 {
@@ -53,6 +56,5 @@ void main(void)
   const vec3 scale = sizes[gl_InstanceIndex].xyz;
 
   vs_ws_position = (center + vertices[indices[gl_VertexIndex % 36]] * scale);
-  vs_color = colors[gl_InstanceIndex].rgb;
   gl_Position = projection_view * vec4(vs_ws_position, 1.0);
 }
