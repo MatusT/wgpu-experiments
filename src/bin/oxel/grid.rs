@@ -1,6 +1,10 @@
 use glm::{vec3, Vec3};
 use nalgebra_glm as glm;
+use safe_transmute::*;
 use std::collections::{HashMap, VecDeque};
+use wgpu_experiments::camera::CameraUbo;
+use wgpu_experiments::pipelines::boxes::ClippedGridPipeline;
+use image;
 
 pub struct VoxelGrid {
     //
@@ -23,20 +27,23 @@ pub enum Round {
     Floor,
     Ceil,
 }
-
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
 pub struct ClipPlane {
     pub point: [f32; 4],
     pub normal: [f32; 4],
 }
 
-impl default for ClipPlane {
+impl Default for ClipPlane {
     fn default() -> Self {
         Self {
-            point: [0.0, 0.0, 0.0, 0.0],
-            normal: [0.0, 0.0, 0.0, 0.0]
+            point: [0.0; 4],
+            normal: [0.0; 4],
         }
     }
 }
+
+unsafe impl TriviallyTransmutable for ClipPlane {}
 
 impl VoxelGrid {
     // World position inside BB -> voxel space
@@ -492,45 +499,247 @@ impl VoxelGrid {
 
         occluders
     }
-    pub fn get_planar_occluders(&mut self, limit: usize) -> Vec<Vec3> {
+    pub fn get_planar_occluders(&mut self, device: &wgpu::Device, queue: &mut wgpu::Queue, limit: usize) -> Vec<Vec<Vec3>> {
+        // Resources
+        let pipeline = ClippedGridPipeline::new(&device);
+
+        let camera_buffer_size = std::mem::size_of::<CameraUbo>();
+        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            size: camera_buffer_size as u64,
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        });
+
+        let clipplane_buffer_size = std::mem::size_of::<ClipPlane>();
+        let clipplane_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            size: camera_buffer_size as u64,
+            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        });
+
+        let mut positions: Vec<f32> = Vec::new();
+        let mut sizes: Vec<f32> = Vec::new();
+        for x in 0..self.size {
+            for y in 0..self.size {
+                for z in 0..self.size {
+                    let index = glm::vec3(x as i32, y as i32, z as i32);
+
+                    if self.voxels[self.to_1d(index)] {
+                        let position = self.to_ws(index);
+                        let size = self.voxel_size;
+
+                        positions.extend_from_slice(&[position.x, position.y, position.z, 1.0]);
+                        sizes.extend_from_slice(&[size.x, size.y, size.z, 1.0]);
+                    }
+                }
+            }
+        }
+        let grid_buffer_size = (positions.len() * std::mem::size_of::<f32>()) as u64;
+        let positions_buffer = device
+            .create_buffer_mapped::<f32>(positions.len(), wgpu::BufferUsage::STORAGE_READ)
+            .fill_from_slice(&positions);
+        let sizes_buffer = device
+            .create_buffer_mapped::<f32>(sizes.len(), wgpu::BufferUsage::STORAGE_READ)
+            .fill_from_slice(&sizes);
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &pipeline.bind_group_layout,
+            bindings: &[
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &camera_buffer,
+                        range: 0..std::mem::size_of::<CameraUbo>() as u64,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &clipplane_buffer,
+                        range: 0..std::mem::size_of::<ClipPlane>() as u64,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &positions_buffer,
+                        range: 0..grid_buffer_size,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &sizes_buffer,
+                        range: 0..grid_buffer_size,
+                    },
+                },
+            ],
+        });
+
+        let framebuffer = device.create_texture(&wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width: self.size as u32,
+                height: self.size as u32,
+                depth: 1,
+            },
+            array_layer_count: 1,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::COPY_SRC,
+        });
+        let framebuffer_buffer_size = (self.size * self.size) as usize * 4usize * std::mem::size_of::<f32>();
+        let framebuffer_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            size: framebuffer_buffer_size as u64,
+            usage: wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::MAP_READ,
+        });
+        let framebuffer_view = framebuffer.create_default_view();
+
+        let radius = glm::length(&self.bb_diff) / 2.0;
+
         let no_cuts = 9;
         let cut_step = glm::length(&self.bb_diff) / no_cuts as f32;
 
-        let planes = [
-            ClipPlane {
-                point: [0.0, 0.0, 0.0, 0.0],
-                normal: [1.0, 0.0, 0.0, 0.0],
-            }
-        ];     
-        
+        let views = [vec3(1.0, 0.0, 0.0)];
+
         let mut planes_triangles: Vec<Vec<Vec3>> = Vec::new();
-        for plane in &planes {
+        for view in &views {
             let triangles = Vec::new();
             let mut max_plane = ClipPlane::default(); // Plane with maximum area (optional: after erosion)
-            for distance in -no_cuts / 2..=no_cuts / 2 {
+            let mut i = 0;
+            for cut in -no_cuts / 2..=no_cuts / 2 {
+                let point = view * cut as f32 * cut_step;
+                let plane = ClipPlane {
+                    point: [point.x, point.z, point.z, 0.0],
+                    normal: [view.x, view.y, view.z, 1.0],
+                };
+
                 // Build camera
+                let view = glm::look_at(&(view * radius), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
+                let camera_max = view * glm::vec4(self.bb_max.x, self.bb_max.y, self.bb_max.z, 1.0);
+                let camera_min = view * glm::vec4(self.bb_min.x, self.bb_min.y, self.bb_min.z, 1.0);
+                let maxx = camera_min.x.abs().max(camera_max.x.abs());
+                let maxy = camera_min.y.abs().max(camera_max.y.abs());
+                let max = maxx.max(maxy);
+                let r = max;
+                let t = max;
+                let l = -r;
+                let b = -t;
+                let projection = glm::ortho_rh_zo(l, r, b, t, 0.001, radius * 2.0);
+                let projection_view = projection * view;
+
+                let camera = CameraUbo {
+                    projection,
+                    view,
+                    projection_view,
+                };
 
                 // Copy new uniforms
+                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+                {
+                    let camera_buffer_temp = device.create_buffer_mapped(camera_buffer_size, wgpu::BufferUsage::COPY_SRC);
+                    let clipplane_buffer_temp = device.create_buffer_mapped(clipplane_buffer_size, wgpu::BufferUsage::COPY_SRC);
+
+                    camera_buffer_temp.data.copy_from_slice(transmute_to_bytes(&[camera]));
+                    clipplane_buffer_temp.data.copy_from_slice(transmute_to_bytes(&[plane]));
+
+                    let camera_buffer_temp = camera_buffer_temp.finish();
+                    let clipplane_buffer_temp = clipplane_buffer_temp.finish();
+
+                    encoder.copy_buffer_to_buffer(&camera_buffer_temp, 0, &camera_buffer, 0, camera_buffer_size as wgpu::BufferAddress);
+                    encoder.copy_buffer_to_buffer(
+                        &clipplane_buffer_temp,
+                        0,
+                        &clipplane_buffer,
+                        0,
+                        clipplane_buffer_size as wgpu::BufferAddress,
+                    );
+                }
 
                 // Render
+                {
+                    println!("RENDER");
+                    let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                            attachment: &framebuffer_view,
+                            resolve_target: None,
+                            load_op: wgpu::LoadOp::Clear,
+                            store_op: wgpu::StoreOp::Store,
+                            clear_color: wgpu::Color::WHITE,
+                        }],
+                        depth_stencil_attachment: None,
+                    });
+
+                    rpass.set_pipeline(&pipeline.pipeline);
+                    rpass.set_bind_group(0, &bind_group, &[]);
+                    rpass.draw(0..36, 0..self.voxels.len() as u32);
+                }
 
                 // Retrieve texture to buffer
-                
+                {
+                    encoder.copy_texture_to_buffer(
+                        wgpu::TextureCopyView {
+                            texture: &framebuffer,
+                            mip_level: 1,
+                            array_layer: 1,
+                            origin: wgpu::Origin3d::default(),
+                        },
+                        wgpu::BufferCopyView {
+                            buffer: &framebuffer_buffer,
+                            offset: 0,
+                            row_pitch: (self.size as usize * 4 * std::mem::size_of::<f32>()) as u32,
+                            image_height: self.size as u32,
+                        },
+                        wgpu::Extent3d {
+                            width: self.size as u32,
+                            height: self.size as u32,
+                            depth: 1,
+                        },
+                    );
+                }
+
+                queue.submit(&[encoder.finish()]);
+                device.poll(true);
+
                 // Copy buffer to CPU and convert it into binary image
+                {
+                    let size = self.size as u32;
+                    framebuffer_buffer.map_read_async(0, framebuffer_buffer_size as u64, move |result: wgpu::BufferMapAsyncResult<&[f32]>| {
+                        let data = result.unwrap().data;
+                        
+                        let img = image::ImageBuffer::from_fn(size, size, |x, y| {
+                            let r = data[(y * size * 4 + x * 4 + 0) as usize] * 255.0;
+                            let g = data[(y * size * 4 + x * 4 + 1) as usize] * 255.0;
+                            let b = data[(y * size * 4 + x * 4 + 2) as usize] * 255.0;
+                            let a = data[(y * size * 4 + x * 4 + 3) as usize] * 255.0;
+                            image::Rgba([r as u8, g as u8, b as u8, b as u8])
+                        });                    
+
+                        let name = String::from("slice_") + &i.to_string() + ".png";
+                        img.save_with_format(&name, image::ImageFormat::Png).unwrap(); 
+                        // image::Gener
+                        // println!("{:?}", data);
+                    });
+                }
+                // framebuffer_buffer.unmap();
+                device.poll(true);
 
                 // Find edge loops
 
                 // Triangulate
 
                 // Remove degenerate triangles, deindex, and sort them by area
+
+                i += 1;
             }
 
-            // 
+            //
 
             planes_triangles.push(triangles);
         }
 
         // Decimate triangles based on limit
         // TODO: based on occlusion
+
+        planes_triangles
     }
 }

@@ -98,7 +98,7 @@ impl Application {
         })
         .unwrap();
 
-        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
+        let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
             extensions: wgpu::Extensions {
                 anisotropic_filtering: false,
             },
@@ -299,20 +299,24 @@ impl Application {
             let mut sizes: Vec<f32> = Vec::new();
             let mut colors: Vec<f32> = Vec::new();
 
-            let occluders= voxel_grid.get_box_occluders(1);
+            // let occluders = voxel_grid.get_box_occluders(1);
 
-            for (bb_min, bb_max) in occluders.iter() {
-                let bb_max: glm::Vec3 = voxel_grid.to_ws(*bb_max) + voxel_grid.voxel_halfsize;
-                let bb_min: glm::Vec3 = voxel_grid.to_ws(*bb_min) - voxel_grid.voxel_halfsize;
+            // for (bb_min, bb_max) in occluders.iter() {
+            //     let bb_max: glm::Vec3 = voxel_grid.to_ws(*bb_max) + voxel_grid.voxel_halfsize;
+            //     let bb_min: glm::Vec3 = voxel_grid.to_ws(*bb_min) - voxel_grid.voxel_halfsize;
 
-                let position = (bb_max + bb_min) * 0.5;
-                let size = (bb_max - bb_min).abs();
-                let color = glm::vec3(0.0, 1.0, 0.0);
+            //     let position = (bb_max + bb_min) * 0.5;
+            //     let size = (bb_max - bb_min).abs();
+            //     let color = glm::vec3(0.0, 1.0, 0.0);
 
-                positions.extend_from_slice(&[position.x, position.y, position.z, 1.0]);
-                sizes.extend_from_slice(&[size.x, size.y, size.z, 1.0]);
-                colors.extend_from_slice(&[rng.gen::<f32>(), rng.gen::<f32>(), rng.gen::<f32>(), 1.0]);
-            }
+            //     positions.extend_from_slice(&[position.x, position.y, position.z, 1.0]);
+            //     sizes.extend_from_slice(&[size.x, size.y, size.z, 1.0]);
+            //     colors.extend_from_slice(&[rng.gen::<f32>(), rng.gen::<f32>(), rng.gen::<f32>(), 1.0]);
+            // }
+
+            positions.extend_from_slice(&[0.0, 0.0, 0.0, 1.0]);
+            sizes.extend_from_slice(&[1.0, 1.0, 1.0, 1.0]);
+            colors.extend_from_slice(&[0.0, 0.0, 0.0, 1.0]);
 
             BoxPipelineInput::new(&device, &positions, &sizes, &colors)
         };
@@ -351,6 +355,8 @@ impl Application {
                 },
             ],
         });
+
+        let occluders_planar = voxel_grid.get_planar_occluders(&device, &mut queue, 1024);
 
         Self {
             width,
@@ -436,10 +442,12 @@ impl ApplicationSkeleton for Application {
                 }),
             });
 
+            /*
             rpass.set_pipeline(&self.box_pipeline_line.pipeline);
             rpass.set_bind_group(0, &self.bounding_box_bind_group, &[]);
             rpass.draw(0..24, 0..1 as u32);
 
+            
             if self.options.render_molecules {
                 rpass.set_pipeline(&self.mesh_pipeline.pipeline);
                 rpass.set_bind_group(0, &self.mesh_bind_group, &[]);
@@ -459,6 +467,7 @@ impl ApplicationSkeleton for Application {
                 rpass.set_bind_group(0, &self.occluders_bind_group, &[]);
                 rpass.draw(0..36, 0..self.occluders.count as u32);
             }
+            */
         }
 
         self.queue.submit(&[encoder.finish()]);

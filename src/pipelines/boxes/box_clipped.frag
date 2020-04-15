@@ -13,12 +13,11 @@ layout(set = 0, binding = 1, std140) uniform ClipPlane {
 
 layout(location = 0) in vec3 vs_ws_position;
 
-void main(void)
-{	
-    // vec3 p0 = vec3(0, 0, 0);
-    // vec3 n0 = vec3(1, 0, 0);
+layout(location = 0) out vec4 out_color;
 
-    if (dot(vs_ws_position - clip.position, clip.normal) < 0.0) {
+void main(void)
+{
+    if (dot(vs_ws_position.xyz - clip.position.xyz, clip.normal.xyz) < 0.0) {
         discard;
     }
 

@@ -51,7 +51,7 @@ fn main() {
     let clipboard = Clipboard::new(&window);
     let mut ui = ui::UserInterface::new();
 
-    let mut ui_on = true;
+    let mut ui_on = false;
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {

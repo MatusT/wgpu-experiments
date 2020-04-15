@@ -129,7 +129,7 @@ pub struct ClippedGridPipeline {
 }
 
 impl ClippedGridPipeline {
-    pub fn new(device: &wgpu::Device, rendering_type: BoxRendering) -> Self {
+    pub fn new(device: &wgpu::Device) -> Self {
         // Shaders
         let vs_bytes = load_glsl(include_str!("box_clipped.vert"), ShaderStage::Vertex);
         let vs_module = device.create_shader_module(&vs_bytes);
@@ -195,9 +195,9 @@ impl ClippedGridPipeline {
                 depth_bias_slope_scale: 0.0,
                 depth_bias_clamp: 0.0,
             }),
-            primitive_topology: rendering_type.into(),
+            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
             color_states: &[wgpu::ColorStateDescriptor {
-                format: wgpu::TextureFormat::Bgra8UnormSrgb,
+                format: wgpu::TextureFormat::Rgba32Float,
                 color_blend: wgpu::BlendDescriptor::REPLACE,
                 alpha_blend: wgpu::BlendDescriptor::REPLACE,
                 write_mask: wgpu::ColorWrite::ALL,
