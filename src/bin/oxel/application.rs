@@ -58,6 +58,8 @@ pub struct Application {
 
     pub multisampled_framebuffer: wgpu::TextureView,
 
+    pub voxel_grid: VoxelGrid,
+
     pub camera: RotationCamera,
     pub camera_buffer: wgpu::Buffer,
 
@@ -373,6 +375,8 @@ impl Application {
             camera,
             camera_buffer,
 
+            voxel_grid,
+
             mesh_pipeline,
             mesh_bind_group,
             mesh,
@@ -442,12 +446,10 @@ impl ApplicationSkeleton for Application {
                 }),
             });
 
-            /*
             rpass.set_pipeline(&self.box_pipeline_line.pipeline);
             rpass.set_bind_group(0, &self.bounding_box_bind_group, &[]);
             rpass.draw(0..24, 0..1 as u32);
 
-            
             if self.options.render_molecules {
                 rpass.set_pipeline(&self.mesh_pipeline.pipeline);
                 rpass.set_bind_group(0, &self.mesh_bind_group, &[]);
@@ -467,7 +469,6 @@ impl ApplicationSkeleton for Application {
                 rpass.set_bind_group(0, &self.occluders_bind_group, &[]);
                 rpass.draw(0..36, 0..self.occluders.count as u32);
             }
-            */
         }
 
         self.queue.submit(&[encoder.finish()]);

@@ -1,11 +1,201 @@
 use glm::{vec3, Vec3};
+use image;
 use nalgebra_glm as glm;
 use safe_transmute::*;
 use std::collections::{HashMap, VecDeque};
 use wgpu_experiments::camera::CameraUbo;
 use wgpu_experiments::pipelines::boxes::ClippedGridPipeline;
-use image;
 
+static T: [(i8, i8); 8] = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)];
+static O_VERTEX: [(i8, i8); 7] = [(-1, 0), (0, 0), (-1, -1), (0, 0), (0, -1), (0, 0), (0, 0)]; // Vertex coordinates for the outlines (bottom left) according to the orientation
+static H_VERTEX: [(i8, i8); 7] = [(0, 0), (0, 0), (-1, 0), (0, 0), (-1, -1), (0, 0), (0, -1)]; // Vertex coordinates for the holes (bottom right) according to the orientation
+static O_VALUE: [i8; 7] = [1, 0, 2, 0, 4, 0, 8]; // Value to add into the array of contours for the outlines
+static H_VALUE: [i8; 7] = [-4, 0, -8, 0, -1, 0, -2]; // Value to add into the array of contours for the holes
+
+pub fn bits_to_paths(width: usize, height: usize, bits: &[i8], closepaths: bool) -> String {
+    let rows: usize = height;
+    let cols: usize = width;
+
+    let mut contours = vec![vec![0i8; cols + 2]; rows + 2]; // The array of contours needs a border of 1 bit
+    for y in 0..=rows - 1 as usize {
+        for x in 0..=cols - 1 as usize {
+            contours[y + 1][x + 1] = bits[y * width + x];
+        }
+    }
+
+    let mut paths = String::new();
+    let mut ol: usize;
+    let mut hl: usize;
+    for y in 1..=rows as usize {
+        ol = 1;
+        hl = 1;
+        for x in 1..=cols as usize {
+            if ol == hl && contours[y][x] == 1 && contours[y][x - 1] <= 0 && contours[y - 1][x] <= 0 {
+                trace(
+                    true,
+                    x,
+                    y,
+                    [2, 3, 4, 5, 6, 7, 0, 1],
+                    2,
+                    (7, 1, 0),
+                    O_VERTEX,
+                    O_VALUE,
+                    &mut contours,
+                    &mut paths,
+                    closepaths,
+                );
+            }
+            if contours[y][x] == 2 || contours[y][x] == 4 || contours[y][x] == 10 || contours[y][x] == 12 {
+                ol += 1;
+            }
+            if contours[y][x] == 5 || contours[y][x] == 7 || contours[y][x] == 13 || contours[y][x] == 15 {
+                ol -= 1;
+            }
+            if ol > hl && contours[y][x] == 0 && contours[y][x - 1] > 0 && contours[y - 1][x] > 0 {
+                trace(
+                    false,
+                    x,
+                    y,
+                    [4, 5, 6, 7, 0, 1, 2, 3],
+                    -2,
+                    (1, 7, 6),
+                    H_VERTEX,
+                    H_VALUE,
+                    &mut contours,
+                    &mut paths,
+                    closepaths,
+                );
+            }
+            if contours[y][x] == -1 || contours[y][x] == -3 || contours[y][x] == -9 || contours[y][x] == -11 {
+                hl += 1;
+            }
+            if contours[y][x] == -4 || contours[y][x] == -6 || contours[y][x] == -12 || contours[y][x] == -14 {
+                hl -= 1;
+            }
+        }
+    }
+    paths
+}
+
+fn trace(
+    hole: bool,
+    x: usize,
+    y: usize,
+    mut o: [usize; 8],
+    rot: i8,
+    viv: (usize, usize, usize),
+    c_vertex: [(i8, i8); 7],
+    c_value: [i8; 7],
+    contours: &mut Vec<Vec<i8>>,
+    paths: &mut String,
+    closepaths: bool,
+) {
+    let mut cx = x; // Current x
+    let mut cy = y; // Current y
+    let mut v: usize = 1; // Number of vertices
+    paths.push_str(&format!(
+        "M{} {}",
+        cx.wrapping_add(c_vertex[o[0]].0 as usize),
+        cy.wrapping_add(c_vertex[o[0]].1 as usize)
+    ));
+    let mut rn: u8;
+    loop {
+        let neighbors: [i8; 8] = [
+            contours[cy - 1][cx],
+            contours[cy - 1][cx + 1],
+            contours[cy][cx + 1],
+            contours[cy + 1][cx + 1],
+            contours[cy + 1][cx],
+            contours[cy + 1][cx - 1],
+            contours[cy][cx - 1],
+            contours[cy - 1][cx - 1],
+        ];
+        if hole {
+            if neighbors[o[7]] > 0 && neighbors[o[0]] > 0 {
+                rn = 1;
+            } else if neighbors[o[0]] > 0 {
+                rn = 2;
+            } else if neighbors[o[1]] > 0 && neighbors[o[2]] > 0 {
+                rn = 3;
+            } else {
+                rn = 0;
+            }
+        } else {
+            if neighbors[o[1]] <= 0 && neighbors[o[0]] <= 0 {
+                rn = 1;
+            } else if neighbors[o[0]] <= 0 {
+                rn = 2;
+            } else if neighbors[o[7]] <= 0 && neighbors[o[6]] <= 0 {
+                rn = 3;
+            } else {
+                rn = 0;
+            }
+        }
+        if rn == 1 {
+            contours[cy][cx] += c_value[o[0]];
+            cx = cx.wrapping_add(T[o[viv.0]].0 as usize);
+            cy = cy.wrapping_add(T[o[viv.0]].1 as usize);
+            o.rotate_right(rot.rem_euclid(8) as usize); // Rotate 90 degrees, counterclockwise for the outlines (rot = 2) or clockwise for the holes (rot = -2)
+            v += 1;
+            if o[0] == 0 || o[0] == 4 {
+                paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
+            } else {
+                paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
+            }
+        } else if rn == 2 {
+            contours[cy][cx] += c_value[o[0]];
+            cx = cx.wrapping_add(T[o[0]].0 as usize);
+            cy = cy.wrapping_add(T[o[0]].1 as usize);
+        } else if rn == 3 {
+            contours[cy][cx] += c_value[o[0]];
+            o.rotate_left(rot.rem_euclid(8) as usize); // Rotate 90 degrees, clockwise for the outlines (rot = 2) or counterclockwise for the holes (rot = -2)
+            contours[cy][cx] += c_value[o[0]];
+            v += 1;
+            if o[0] == 0 || o[0] == 4 {
+                paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
+            } else {
+                paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
+            }
+            o.rotate_right(rot.rem_euclid(8) as usize);
+            cx = cx.wrapping_add(T[o[viv.1]].0 as usize);
+            cy = cy.wrapping_add(T[o[viv.1]].1 as usize);
+            v += 1;
+            if o[0] == 0 || o[0] == 4 {
+                paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
+            } else {
+                paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
+            }
+        } else {
+            contours[cy][cx] += c_value[o[0]];
+            o.rotate_left(rot.rem_euclid(8) as usize);
+            v += 1;
+            if o[0] == 0 || o[0] == 4 {
+                paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
+            } else {
+                paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
+            }
+        }
+        if cx == x && cy == y && v > 2 {
+            break;
+        }
+    }
+    loop {
+        contours[cy][cx] += c_value[o[0]];
+        if o[0] == viv.2 {
+            break;
+        }
+        o.rotate_left(rot.rem_euclid(8) as usize);
+        v += 1;
+        if o[0] == 0 || o[0] == 4 {
+            paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
+        } else {
+            paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
+        }
+    }
+    if closepaths {
+        paths.push_str("Z");
+    }
+}
 pub struct VoxelGrid {
     //
     pub size: i32,
@@ -500,237 +690,133 @@ impl VoxelGrid {
         occluders
     }
     pub fn get_planar_occluders(&mut self, device: &wgpu::Device, queue: &mut wgpu::Queue, limit: usize) -> Vec<Vec<Vec3>> {
-        // Resources
-        let pipeline = ClippedGridPipeline::new(&device);
-
-        let camera_buffer_size = std::mem::size_of::<CameraUbo>();
-        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            size: camera_buffer_size as u64,
-            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-        });
-
-        let clipplane_buffer_size = std::mem::size_of::<ClipPlane>();
-        let clipplane_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            size: camera_buffer_size as u64,
-            usage: wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-        });
-
-        let mut positions: Vec<f32> = Vec::new();
-        let mut sizes: Vec<f32> = Vec::new();
-        for x in 0..self.size {
-            for y in 0..self.size {
-                for z in 0..self.size {
-                    let index = glm::vec3(x as i32, y as i32, z as i32);
-
-                    if self.voxels[self.to_1d(index)] {
-                        let position = self.to_ws(index);
-                        let size = self.voxel_size;
-
-                        positions.extend_from_slice(&[position.x, position.y, position.z, 1.0]);
-                        sizes.extend_from_slice(&[size.x, size.y, size.z, 1.0]);
-                    }
-                }
-            }
-        }
-        let grid_buffer_size = (positions.len() * std::mem::size_of::<f32>()) as u64;
-        let positions_buffer = device
-            .create_buffer_mapped::<f32>(positions.len(), wgpu::BufferUsage::STORAGE_READ)
-            .fill_from_slice(&positions);
-        let sizes_buffer = device
-            .create_buffer_mapped::<f32>(sizes.len(), wgpu::BufferUsage::STORAGE_READ)
-            .fill_from_slice(&sizes);
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &pipeline.bind_group_layout,
-            bindings: &[
-                wgpu::Binding {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &camera_buffer,
-                        range: 0..std::mem::size_of::<CameraUbo>() as u64,
-                    },
-                },
-                wgpu::Binding {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &clipplane_buffer,
-                        range: 0..std::mem::size_of::<ClipPlane>() as u64,
-                    },
-                },
-                wgpu::Binding {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &positions_buffer,
-                        range: 0..grid_buffer_size,
-                    },
-                },
-                wgpu::Binding {
-                    binding: 3,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &sizes_buffer,
-                        range: 0..grid_buffer_size,
-                    },
-                },
-            ],
-        });
-
-        let framebuffer = device.create_texture(&wgpu::TextureDescriptor {
-            size: wgpu::Extent3d {
-                width: self.size as u32,
-                height: self.size as u32,
-                depth: 1,
-            },
-            array_layer_count: 1,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba32Float,
-            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT | wgpu::TextureUsage::COPY_SRC,
-        });
-        let framebuffer_buffer_size = (self.size * self.size) as usize * 4usize * std::mem::size_of::<f32>();
-        let framebuffer_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            size: framebuffer_buffer_size as u64,
-            usage: wgpu::BufferUsage::COPY_DST | wgpu::BufferUsage::MAP_READ,
-        });
-        let framebuffer_view = framebuffer.create_default_view();
+        use lyon::math::Point;
+        use lyon::svg::path_utils::*;
+        use lyon::tessellation::*;
 
         let radius = glm::length(&self.bb_diff) / 2.0;
 
         let no_cuts = 9;
         let cut_step = glm::length(&self.bb_diff) / no_cuts as f32;
 
-        let views = [vec3(1.0, 0.0, 0.0)];
+        let views = [vec3(0.0, 0.0, 1.0)];
 
         let mut planes_triangles: Vec<Vec<Vec3>> = Vec::new();
         for view in &views {
             let triangles = Vec::new();
             let mut max_plane = ClipPlane::default(); // Plane with maximum area (optional: after erosion)
             let mut i = 0;
+
+            let mut max_area = 0;
+            let mut max_img = Vec::new();
             for cut in -no_cuts / 2..=no_cuts / 2 {
-                let point = view * cut as f32 * cut_step;
-                let plane = ClipPlane {
-                    point: [point.x, point.z, point.z, 0.0],
-                    normal: [view.x, view.y, view.z, 1.0],
-                };
+                let mut save_img = image::ImageBuffer::new(self.size as u32, self.size as u32);
+                let mut img = Vec::new();
+                let mut area: u64 = 0;
+                let step = glm::length(&self.bb_diff) / self.size as f32;
+                for y in -self.size / 2..self.size / 2 {
+                    for x in -self.size / 2..self.size / 2 {
+                        // World-space coordinates
+                        let x_ws = x as f32 * step + step * 0.5;
+                        let y_ws = y as f32 * step + step * 0.5;
+                        let z_ws = cut as f32 * cut_step;
 
-                // Build camera
-                let view = glm::look_at(&(view * radius), &glm::vec3(0.0, 0.0, 0.0), &glm::vec3(0.0, 1.0, 0.0));
-                let camera_max = view * glm::vec4(self.bb_max.x, self.bb_max.y, self.bb_max.z, 1.0);
-                let camera_min = view * glm::vec4(self.bb_min.x, self.bb_min.y, self.bb_min.z, 1.0);
-                let maxx = camera_min.x.abs().max(camera_max.x.abs());
-                let maxy = camera_min.y.abs().max(camera_max.y.abs());
-                let max = maxx.max(maxy);
-                let r = max;
-                let t = max;
-                let l = -r;
-                let b = -t;
-                let projection = glm::ortho_rh_zo(l, r, b, t, 0.001, radius * 2.0);
-                let projection_view = projection * view;
+                        let occupied;
+                        if x_ws <= self.bb_min.x
+                            || x_ws >= self.bb_max.x
+                            || y_ws <= self.bb_min.y
+                            || y_ws >= self.bb_max.y
+                            || z_ws <= self.bb_min.z
+                            || z_ws >= self.bb_max.z
+                        {
+                            occupied = 0;
+                        } else {
+                            occupied = if self.voxels[self.to_1d(self.snap(glm::vec3(x_ws, y_ws, z_ws), Round::Floor))] { 1 } else { 0 } as i8;
+                            // println!("{}", occupied);
+                            area += occupied as u64;
+                        }
 
-                let camera = CameraUbo {
-                    projection,
-                    view,
-                    projection_view,
-                };
-
-                // Copy new uniforms
-                let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
-
-                {
-                    let camera_buffer_temp = device.create_buffer_mapped(camera_buffer_size, wgpu::BufferUsage::COPY_SRC);
-                    let clipplane_buffer_temp = device.create_buffer_mapped(clipplane_buffer_size, wgpu::BufferUsage::COPY_SRC);
-
-                    camera_buffer_temp.data.copy_from_slice(transmute_to_bytes(&[camera]));
-                    clipplane_buffer_temp.data.copy_from_slice(transmute_to_bytes(&[plane]));
-
-                    let camera_buffer_temp = camera_buffer_temp.finish();
-                    let clipplane_buffer_temp = clipplane_buffer_temp.finish();
-
-                    encoder.copy_buffer_to_buffer(&camera_buffer_temp, 0, &camera_buffer, 0, camera_buffer_size as wgpu::BufferAddress);
-                    encoder.copy_buffer_to_buffer(
-                        &clipplane_buffer_temp,
-                        0,
-                        &clipplane_buffer,
-                        0,
-                        clipplane_buffer_size as wgpu::BufferAddress,
-                    );
+                        save_img.put_pixel((x + self.size / 2) as u32, (y + self.size / 2) as u32, image::Rgb([occupied as u8 * 255, occupied as u8 * 255, occupied as u8 * 255]));
+                        img.push(occupied);
+                    }
                 }
 
-                // Render
-                {
-                    println!("RENDER");
-                    let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                        color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                            attachment: &framebuffer_view,
-                            resolve_target: None,
-                            load_op: wgpu::LoadOp::Clear,
-                            store_op: wgpu::StoreOp::Store,
-                            clear_color: wgpu::Color::WHITE,
-                        }],
-                        depth_stencil_attachment: None,
-                    });
-
-                    rpass.set_pipeline(&pipeline.pipeline);
-                    rpass.set_bind_group(0, &bind_group, &[]);
-                    rpass.draw(0..36, 0..self.voxels.len() as u32);
+                if area > max_area {
+                    max_area = area;
+                    max_img = img;
                 }
 
-                // Retrieve texture to buffer
-                {
-                    encoder.copy_texture_to_buffer(
-                        wgpu::TextureCopyView {
-                            texture: &framebuffer,
-                            mip_level: 1,
-                            array_layer: 1,
-                            origin: wgpu::Origin3d::default(),
-                        },
-                        wgpu::BufferCopyView {
-                            buffer: &framebuffer_buffer,
-                            offset: 0,
-                            row_pitch: (self.size as usize * 4 * std::mem::size_of::<f32>()) as u32,
-                            image_height: self.size as u32,
-                        },
-                        wgpu::Extent3d {
-                            width: self.size as u32,
-                            height: self.size as u32,
-                            depth: 1,
-                        },
-                    );
-                }
-
-                queue.submit(&[encoder.finish()]);
-                device.poll(true);
-
-                // Copy buffer to CPU and convert it into binary image
-                {
-                    let size = self.size as u32;
-                    framebuffer_buffer.map_read_async(0, framebuffer_buffer_size as u64, move |result: wgpu::BufferMapAsyncResult<&[f32]>| {
-                        let data = result.unwrap().data;
-                        
-                        let img = image::ImageBuffer::from_fn(size, size, |x, y| {
-                            let r = data[(y * size * 4 + x * 4 + 0) as usize] * 255.0;
-                            let g = data[(y * size * 4 + x * 4 + 1) as usize] * 255.0;
-                            let b = data[(y * size * 4 + x * 4 + 2) as usize] * 255.0;
-                            let a = data[(y * size * 4 + x * 4 + 3) as usize] * 255.0;
-                            image::Rgba([r as u8, g as u8, b as u8, b as u8])
-                        });                    
-
-                        let name = String::from("slice_") + &i.to_string() + ".png";
-                        img.save_with_format(&name, image::ImageFormat::Png).unwrap(); 
-                        // image::Gener
-                        // println!("{:?}", data);
-                    });
-                }
-                // framebuffer_buffer.unmap();
-                device.poll(true);
-
+                let name = String::from("slice_") + &i.to_string() + "_" + &area.to_string() + ".png";
+                save_img.save_with_format(&name, image::ImageFormat::Png).unwrap();
                 // Find edge loops
-
-                // Triangulate
-
-                // Remove degenerate triangles, deindex, and sort them by area
 
                 i += 1;
             }
+
+            let svg_path = bits_to_paths(self.size as usize, self.size as usize, &max_img, true);
+            println!("{}", svg_path);
+
+            // Triangulate
+            // Create a simple path.
+            let svg_builder = lyon::svg::path::Path::builder().with_svg();
+            let path = build_path(svg_builder, &svg_path).unwrap();
+
+            // Will contain the result of the tessellation.
+            let mut geometry: VertexBuffers<glm::Vec2, i32> = VertexBuffers::new();
+            let mut tessellator = FillTessellator::new();
+            {
+                // Compute the tessellation.
+                tessellator
+                    .tessellate_path(
+                        &path,
+                        &FillOptions::default(),
+                        &mut BuffersBuilder::new(&mut geometry, |pos: Point, _: FillAttributes| glm::vec2(pos.x, pos.y)),
+                    )
+                    .unwrap();
+            }
+
+            // Kill degenerate triangles
+            for i in 0..geometry.indices.len() / 3 {
+                let p1 = geometry.vertices[geometry.indices[i * 3] as usize];
+                let p2 = geometry.vertices[geometry.indices[i * 3 + 1] as usize];
+                let p3 = geometry.vertices[geometry.indices[i * 3 + 2] as usize];
+
+                let a = glm::distance(&p1, &p2);
+                let b = glm::distance(&p2, &p3);
+                let c = glm::distance(&p3, &p1);
+
+                let s = (a + b + c) / 2.0;
+
+                let area = s * (s - a) * (s - b) * (s - c);
+
+                if area <= 2.0 {
+                    geometry.indices[i * 3] = -1;
+                    geometry.indices[i * 3 + 1] = -1;
+                    geometry.indices[i * 3 + 2] = -1;
+                }
+            }
+
+/*            
+            for i in 0..geometry.indices.len() {
+                let index = geometry.indices[i];
+                if index == -1 {
+                    continue;
+                }
+
+                if i % 3 == 0 {
+                    print!("<polygon points=\"");
+                }
+
+                print!("{},{} ", geometry.vertices[index as usize].x, geometry.vertices[index as usize].y);
+
+                if i % 3 == 2 {
+                    println!("\"/>");
+                }
+            }
+            */
+            
+
+            // Remove degenerate triangles, deindex, and sort them by area
 
             //
 

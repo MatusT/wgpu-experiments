@@ -34,76 +34,6 @@ static H_VERTEX: [(i8, i8); 7] = [(0, 0), (0, 0), (-1, 0), (0, 0), (-1, -1), (0,
 static O_VALUE: [i8; 7] = [1, 0, 2, 0, 4, 0, 8]; // Value to add into the array of contours for the outlines
 static H_VALUE: [i8; 7] = [-4, 0, -8, 0, -1, 0, -2]; // Value to add into the array of contours for the holes
 
-/*
- contours: an array of contours
- ol: outlines level
- hl: holes level
- rn: reachable neighbor - For outlines -> 0: none, 1: front left neighbor,  2: front neighbor, 3: front right neighbor
-                        - For holes    -> 0: none, 1: front right neighbor, 2: front neighbor, 3: front left neighbor
- o: orientation:
-
-            North
-        ┌───────────┐
-        │ 7   0   1 │
-   West │ 6   o   2 │ East
-        │ 5   4   3 │
-        └───────────┘
-            South
-
- - To the north, o = {0, 1, 2, 3, 4, 5, 6, 7}
- - To the east,  o = {2, 3, 4, 5, 6, 7, 0, 1}
- - To the south, o = {4, 5, 6, 7, 0, 1, 2, 3}
- - To the west,  o = {6, 7, 0, 1, 2, 3, 4, 5}
-*/
-
-/// A function that takes a 2D array of bits and an option as input and return a string of SVG Path commands as output.
-/// # Examples
-/// ```
-/// extern crate contour_tracing;
-/// use contour_tracing::bits_to_paths;
-/// ```
-/// - A simple example with the **closepaths option** set to **false**:
-/// ```
-/// # extern crate contour_tracing;
-/// # use contour_tracing::bits_to_paths;
-/// let bits = vec![vec![ 0,0,0,0,0,0,0,0,0,0,0,0,0 ],
-///                 vec![ 0,0,1,1,1,0,0,1,1,1,1,1,0 ],
-///                 vec![ 0,1,0,0,0,1,0,1,0,0,0,1,0 ],
-///                 vec![ 0,1,0,0,0,1,0,1,0,1,0,1,0 ],
-///                 vec![ 0,1,0,0,0,1,0,1,0,0,0,1,0 ],
-///                 vec![ 0,0,1,1,1,0,0,1,1,1,1,1,0 ],
-///                 vec![ 0,0,0,0,0,0,0,0,0,0,0,0,0 ]];
-///
-/// # assert_eq!(bits_to_paths(bits.to_vec(), false), "M2 1H5V2H2M7 1H12V6H7M1 2H2V5H1M5 2H6V5H5M8 2V5H11V2M9 3H10V4H9M2 5H5V6H2");
-/// println!("{}", bits_to_paths(bits, false));
-/// ```
-/// - When the **closepaths option** is set to **true**, each path is closed with the SVG Path **Z** command:
-/// ```
-/// # extern crate contour_tracing;
-/// # use contour_tracing::bits_to_paths;
-/// # let bits = vec![vec![ 0,0,0,0,0,0,0,0,0,0,0,0,0 ],
-/// #                 vec![ 0,0,1,1,1,0,0,1,1,1,1,1,0 ],
-/// #                 vec![ 0,1,0,0,0,1,0,1,0,0,0,1,0 ],
-/// #                 vec![ 0,1,0,0,0,1,0,1,0,1,0,1,0 ],
-/// #                 vec![ 0,1,0,0,0,1,0,1,0,0,0,1,0 ],
-/// #                 vec![ 0,0,1,1,1,0,0,1,1,1,1,1,0 ],
-/// #                 vec![ 0,0,0,0,0,0,0,0,0,0,0,0,0 ]];
-/// # assert_eq!(bits_to_paths(bits.to_vec(), true), "M2 1H5V2H2ZM7 1H12V6H7ZM1 2H2V5H1ZM5 2H6V5H5ZM8 2V5H11V2ZM9 3H10V4H9ZM2 5H5V6H2Z");
-/// println!("{}", bits_to_paths(bits, true));
-/// ```
-/// - If you plan to reuse the array of bits after using this function, use the `to_vec()` method like this:
-///
-/// ```
-/// # extern crate contour_tracing;
-/// # use contour_tracing::bits_to_paths;
-/// let bits = vec![vec![ 1,0,0 ],
-///                 vec![ 0,1,0 ],
-///                 vec![ 0,0,1 ]];
-///
-/// # assert_eq!(bits_to_paths(bits.to_vec(), true), "M0 0H1V1H0ZM1 1H2V2H1ZM2 2H3V3H2Z");
-/// println!("{}", bits_to_paths(bits.to_vec(), true));
-/// println!("{:?}", bits);
-/// ```
 pub fn bits_to_paths(bits: Vec<Vec<i8>>, closepaths: bool) -> String {
     let rows: usize = bits.len();
     let cols: usize = bits[0].len();
@@ -308,17 +238,9 @@ fn main() {
     let svg_builder = lyon::svg::path::Path::builder().with_svg();
     let path = build_path(svg_builder, &svg_path).unwrap();
 
-    // Let's use our own custom vertex type instead of the default one.
-    #[derive(Copy, Clone, Debug)]
-    struct MyVertex {
-        position: [f32; 2],
-    };
-
     // Will contain the result of the tessellation.
     let mut geometry: VertexBuffers<glm::Vec2, i32> = VertexBuffers::new();
-
     let mut tessellator = FillTessellator::new();
-
     {
         // Compute the tessellation.
         tessellator
@@ -329,17 +251,6 @@ fn main() {
             )
             .unwrap();
     }
-
-    // The tessellated geometry is ready to be uploaded to the GPU.
-    // println!(" -- {} vertices {} indices",
-    //     geometry.vertices.len(),
-    //     geometry.indices.len()
-    // );
-    // println!("{:?}", geometry.vertices);
-    // println!("{:?}", geometry.indices);
-    // for i in geometry.indices {
-    //     println!("{:?}", geometry.vertices[i as u32])
-    // }
 
     // Kill degenerate triangles
     println!("{:?}", geometry.indices);
