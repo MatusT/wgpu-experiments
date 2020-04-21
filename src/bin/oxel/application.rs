@@ -367,19 +367,18 @@ impl Application {
         let planar_occluders_pipeline = TrianglesPipeline::new(&device);
         let planar_occluders_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &planar_occluders_pipeline.bind_group_layout,
-            bindings: &[
-                Binding {
-                    binding: 0,
-                    resource: BindingResource::Buffer {
-                        buffer: &camera_buffer,
-                        range: 0..192,
-                    },
+            bindings: &[Binding {
+                binding: 0,
+                resource: BindingResource::Buffer {
+                    buffer: &camera_buffer,
+                    range: 0..192,
                 },
-            ],
+            }],
         });
         let planar_occluders_len;
         let planar_occluders = {
             let planar_occluders = voxel_grid.get_planar_occluders(&device, &mut queue, 1024);
+            println!("Ocluders: {}", planar_occluders.len() / 3);
             planar_occluders_len = planar_occluders.len();
             let mut res = Vec::new();
             for occluder in planar_occluders {
@@ -497,7 +496,6 @@ impl ApplicationSkeleton for Application {
                 rpass.set_index_buffer(&self.mesh.indices(), 0);
                 rpass.draw_indexed(0..self.mesh.indices_len(), 0, 0..self.atoms_len);
             }
-
 
             if self.options.render_grid {
                 rpass.set_pipeline(&self.box_pipeline_filled.pipeline);
