@@ -1,4 +1,4 @@
-use glm::{vec3, Vec3};
+use glm::{vec3, Vec3, vec4, Vec4};
 use image;
 use nalgebra_glm as glm;
 use safe_transmute::*;
@@ -12,7 +12,11 @@ static H_VERTEX: [(i8, i8); 7] = [(0, 0), (0, 0), (-1, 0), (0, 0), (-1, -1), (0,
 static O_VALUE: [i8; 7] = [1, 0, 2, 0, 4, 0, 8]; // Value to add into the array of contours for the outlines
 static H_VALUE: [i8; 7] = [-4, 0, -8, 0, -1, 0, -2]; // Value to add into the array of contours for the holes
 
-pub fn bits_to_paths(width: usize, height: usize, bits: &[i8], closepaths: bool) -> String {
+pub fn bits_to_paths(width: usize, height: usize, bits: &[i8]) -> Vec<Vec<lyon::math::Point>> {
+    use lyon::path::Path;
+    use lyon::math::{point};
+    use lyon::path::builder::*;
+
     let rows: usize = height;
     let cols: usize = width;
 
@@ -23,7 +27,9 @@ pub fn bits_to_paths(width: usize, height: usize, bits: &[i8], closepaths: bool)
         }
     }
 
-    let mut paths = String::new();
+    let mut paths = Vec::new();
+    // let mut builder = Path::builder().with_svg();
+    
     let mut ol: usize;
     let mut hl: usize;
     for y in 1..=rows as usize {
@@ -31,7 +37,7 @@ pub fn bits_to_paths(width: usize, height: usize, bits: &[i8], closepaths: bool)
         hl = 1;
         for x in 1..=cols as usize {
             if ol == hl && contours[y][x] == 1 && contours[y][x - 1] <= 0 && contours[y - 1][x] <= 0 {
-                trace(
+                paths.push(trace(
                     true,
                     x,
                     y,
@@ -41,9 +47,8 @@ pub fn bits_to_paths(width: usize, height: usize, bits: &[i8], closepaths: bool)
                     O_VERTEX,
                     O_VALUE,
                     &mut contours,
-                    &mut paths,
-                    closepaths,
-                );
+                    // &mut paths,
+                ));
             }
             if contours[y][x] == 2 || contours[y][x] == 4 || contours[y][x] == 10 || contours[y][x] == 12 {
                 ol += 1;
@@ -52,7 +57,7 @@ pub fn bits_to_paths(width: usize, height: usize, bits: &[i8], closepaths: bool)
                 ol -= 1;
             }
             if ol > hl && contours[y][x] == 0 && contours[y][x - 1] > 0 && contours[y - 1][x] > 0 {
-                trace(
+                paths.push(trace(
                     false,
                     x,
                     y,
@@ -62,9 +67,8 @@ pub fn bits_to_paths(width: usize, height: usize, bits: &[i8], closepaths: bool)
                     H_VERTEX,
                     H_VALUE,
                     &mut contours,
-                    &mut paths,
-                    closepaths,
-                );
+                    // &mut paths,
+                ));
             }
             if contours[y][x] == -1 || contours[y][x] == -3 || contours[y][x] == -9 || contours[y][x] == -11 {
                 hl += 1;
@@ -74,6 +78,7 @@ pub fn bits_to_paths(width: usize, height: usize, bits: &[i8], closepaths: bool)
             }
         }
     }
+
     paths
 }
 
@@ -87,17 +92,26 @@ fn trace(
     c_vertex: [(i8, i8); 7],
     c_value: [i8; 7],
     contours: &mut Vec<Vec<i8>>,
-    paths: &mut String,
-    closepaths: bool,
-) {
+
+    // builder: &mut lyon::path::builder::SvgPathBuilder<lyon::path::Builder>,
+) -> Vec<lyon::math::Point>{
+    use lyon::path::Path;
+    use lyon::math::{Point, point};
+    use lyon::path::builder::*;
+
     let mut cx = x; // Current x
     let mut cy = y; // Current y
     let mut v: usize = 1; // Number of vertices
-    paths.push_str(&format!(
-        "M{} {}",
-        cx.wrapping_add(c_vertex[o[0]].0 as usize),
-        cy.wrapping_add(c_vertex[o[0]].1 as usize)
-    ));
+    // paths.push_str(&format!(
+    //     "M{} {}",
+    //     cx.wrapping_add(c_vertex[o[0]].0 as usize),
+    //     cy.wrapping_add(c_vertex[o[0]].1 as usize)
+    // ));
+    // builder.move_to(point(cx.wrapping_add(c_vertex[o[0]].0 as usize) as f32, cy.wrapping_add(c_vertex[o[0]].1 as usize) as f32));
+
+    let mut paths = Vec::new();
+    paths.push(Point::new(cx.wrapping_add(c_vertex[o[0]].0 as usize) as f32, cy.wrapping_add(c_vertex[o[0]].1 as usize) as f32));
+
     let mut rn: u8;
     loop {
         let neighbors: [i8; 8] = [
@@ -134,13 +148,17 @@ fn trace(
         if rn == 1 {
             contours[cy][cx] += c_value[o[0]];
             cx = cx.wrapping_add(T[o[viv.0]].0 as usize);
-            cy = cy.wrapping_add(T[o[viv.0]].1 as usize);
+            cy = cy.wrapping_add(T[o[viv.0]].1 as usize);            
             o.rotate_right(rot.rem_euclid(8) as usize); // Rotate 90 degrees, counterclockwise for the outlines (rot = 2) or clockwise for the holes (rot = -2)
             v += 1;
+
+            paths.push(Point::new(cx as f32, cy as f32));
             if o[0] == 0 || o[0] == 4 {
-                paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
+                // builder.horizontal_line_to(cx.wrapping_add(c_vertex[o[0]].0 as usize) as f32);
+                // paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
             } else {
-                paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
+                // builder.vertical_line_to(cy.wrapping_add(c_vertex[o[0]].1 as usize) as f32);
+                // paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
             }
         } else if rn == 2 {
             contours[cy][cx] += c_value[o[0]];
@@ -151,28 +169,40 @@ fn trace(
             o.rotate_left(rot.rem_euclid(8) as usize); // Rotate 90 degrees, clockwise for the outlines (rot = 2) or counterclockwise for the holes (rot = -2)
             contours[cy][cx] += c_value[o[0]];
             v += 1;
+
+            paths.push(Point::new(cx as f32, cy as f32));
             if o[0] == 0 || o[0] == 4 {
-                paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
+                // builder.horizontal_line_to(cx.wrapping_add(c_vertex[o[0]].0 as usize) as f32);
+                // paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
             } else {
-                paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
+                // builder.vertical_line_to(cy.wrapping_add(c_vertex[o[0]].1 as usize) as f32);
+                // paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
             }
             o.rotate_right(rot.rem_euclid(8) as usize);
             cx = cx.wrapping_add(T[o[viv.1]].0 as usize);
             cy = cy.wrapping_add(T[o[viv.1]].1 as usize);
             v += 1;
+
+            paths.push(Point::new(cx as f32, cy as f32));
             if o[0] == 0 || o[0] == 4 {
-                paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
+                // builder.horizontal_line_to(cx.wrapping_add(c_vertex[o[0]].0 as usize) as f32);
+                // paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
             } else {
-                paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
+                // builder.vertical_line_to(cy.wrapping_add(c_vertex[o[0]].1 as usize) as f32);
+                // paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
             }
         } else {
             contours[cy][cx] += c_value[o[0]];
             o.rotate_left(rot.rem_euclid(8) as usize);
             v += 1;
+
+            paths.push(Point::new(cx as f32, cy as f32));
             if o[0] == 0 || o[0] == 4 {
-                paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
+                // builder.horizontal_line_to(cx.wrapping_add(c_vertex[o[0]].0 as usize) as f32);
+                // paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
             } else {
-                paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
+                // builder.vertical_line_to(cy.wrapping_add(c_vertex[o[0]].1 as usize) as f32);
+                // paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
             }
         }
         if cx == x && cy == y && v > 2 {
@@ -186,16 +216,54 @@ fn trace(
         }
         o.rotate_left(rot.rem_euclid(8) as usize);
         v += 1;
+
+        paths.push(Point::new(cx as f32, cy as f32));
         if o[0] == 0 || o[0] == 4 {
-            paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
+            // builder.horizontal_line_to(cx.wrapping_add(c_vertex[o[0]].0 as usize) as f32);
+            // paths.push_str(&format!("H{}", cx.wrapping_add(c_vertex[o[0]].0 as usize)));
         } else {
-            paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
+            // builder.vertical_line_to(cy.wrapping_add(c_vertex[o[0]].1 as usize) as f32);
+            // paths.push_str(&format!("V{}", cy.wrapping_add(c_vertex[o[0]].1 as usize)));
         }
     }
-    if closepaths {
-        paths.push_str("Z");
-    }
+
+    paths
 }
+
+fn line_point_distance(l1: lyon::math::Point, l2: lyon::math::Point, p: lyon::math::Point) -> f32 {
+    let numerator = ((l2.y - l1.y) * p.x - (l2.x - l1.x) * p.y + l2.x * l1.y - l2.y * l1.x).abs();
+    let denominator = ((l2.y - l1.y) * (l2.y - l1.y) + (l2.x - l1.x) * (l2.x - l1.x)).sqrt();
+    let distance = numerator / denominator;
+    return distance;
+}
+
+fn douglas_peucker(points: Vec<lyon::math::Point>, eps: f32) -> Vec<lyon::math::Point> {
+    let mut result_list: Vec<lyon::math::Point> = vec![];
+    let mut dmax = 0.0;
+    let mut index: usize = 0;
+    let mut d = 0.0;
+    for i in 1..points.len() - 1 {
+        d = line_point_distance(points[0], points[points.len() - 1], points[i]);
+        if d > dmax {
+            dmax = d;
+            index = i;
+        }
+    }
+
+    if dmax > eps {
+        let rec_results1 = douglas_peucker(points[0 .. index + 1].to_vec(), eps);
+        let rec_results2 = douglas_peucker(points[index .. (points.len())].to_vec(), eps);
+        result_list = rec_results1[0 .. rec_results1.len() - 1].to_vec();
+        result_list.extend(rec_results2.iter().cloned());
+    }
+    else {
+        result_list.push(points[0]);
+        result_list.push(points[points.len() - 1]);
+    }
+
+    return result_list;
+}
+
 pub struct VoxelGrid {
     //
     pub size: i32,
@@ -689,29 +757,39 @@ impl VoxelGrid {
 
         occluders
     }
-    pub fn get_planar_occluders(&mut self, device: &wgpu::Device, queue: &mut wgpu::Queue, limit: usize) -> Vec<Vec<Vec3>> {
+    pub fn get_planar_occluders(&mut self, device: &wgpu::Device, queue: &mut wgpu::Queue, limit: usize) -> Vec<Vec4> {
         use lyon::math::Point;
         use lyon::svg::path_utils::*;
         use lyon::tessellation::*;
 
         let radius = glm::length(&self.bb_diff) / 2.0;
 
-        let no_cuts = 9;
+        let no_cuts = 32;
         let cut_step = glm::length(&self.bb_diff) / no_cuts as f32;
 
-        let views = [vec3(0.0, 0.0, 1.0)];
+        let plane_vec = vec4(0.0, 0.0, 1.0, 1.0);
+        let mut views = Vec::new();
+        for x in (0..30).step_by(30) {
+            for y in (0..30).step_by(30) {
+                views.push(glm::vec2((x as f32).to_radians(), (y as f32).to_radians()));
+            }
+        }
 
-        let mut planes_triangles: Vec<Vec<Vec3>> = Vec::new();
+        let mut planes_triangles: Vec<Vec<glm::Vec4>> = Vec::new();
         for view in &views {
-            let triangles = Vec::new();
-            let mut max_plane = ClipPlane::default(); // Plane with maximum area (optional: after erosion)
-            let mut i = 0;
+            let plane_vec = glm::rotate_z(&glm::one(), view.y) * glm::rotate_y(&glm::one(), view.x) * plane_vec;
+            
+            let mut triangles = Vec::new();
 
+            let mut i = 0;
+            let mut max_plane = ClipPlane::default(); // Plane with maximum area (optional: after erosion)
+            let mut max_cut = 0.0;
             let mut max_area = 0;
             let mut max_img = Vec::new();
             for cut in -no_cuts / 2..=no_cuts / 2 {
-                let mut save_img = image::ImageBuffer::new(self.size as u32, self.size as u32);
+                // let mut save_img = image::ImageBuffer::new(self.size as u32, self.size as u32);
                 let mut img = Vec::new();
+
                 let mut area: u64 = 0;
                 let step = glm::length(&self.bb_diff) / self.size as f32;
                 for y in -self.size / 2..self.size / 2 {
@@ -721,22 +799,23 @@ impl VoxelGrid {
                         let y_ws = y as f32 * step + step * 0.5;
                         let z_ws = cut as f32 * cut_step;
 
+                        let ws = glm::rotate_z(&glm::one(), view.y) * glm::rotate_y(&glm::one(), view.x) * vec4(x_ws, y_ws, 0.0, 1.0);
+                        let ws = ws + plane_vec * z_ws;
+
                         let occupied;
-                        if x_ws <= self.bb_min.x
-                            || x_ws >= self.bb_max.x
-                            || y_ws <= self.bb_min.y
-                            || y_ws >= self.bb_max.y
-                            || z_ws <= self.bb_min.z
-                            || z_ws >= self.bb_max.z
+                        if ws.x <= self.bb_min.x
+                            || ws.x >= self.bb_max.x
+                            || ws.y <= self.bb_min.y
+                            || ws.y >= self.bb_max.y
+                            || ws.z <= self.bb_min.z
+                            || ws.z >= self.bb_max.z
                         {
                             occupied = 0;
                         } else {
-                            occupied = if self.voxels[self.to_1d(self.snap(glm::vec3(x_ws, y_ws, z_ws), Round::Floor))] { 1 } else { 0 } as i8;
-                            // println!("{}", occupied);
+                            occupied = if self.voxels[self.to_1d(self.snap(ws.xyz(), Round::Floor))] { 1 } else { 0 } as i8;
                             area += occupied as u64;
                         }
 
-                        save_img.put_pixel((x + self.size / 2) as u32, (y + self.size / 2) as u32, image::Rgb([occupied as u8 * 255, occupied as u8 * 255, occupied as u8 * 255]));
                         img.push(occupied);
                     }
                 }
@@ -744,22 +823,22 @@ impl VoxelGrid {
                 if area > max_area {
                     max_area = area;
                     max_img = img;
+                    max_cut = cut as f32 * cut_step;
                 }
-
-                let name = String::from("slice_") + &i.to_string() + "_" + &area.to_string() + ".png";
-                save_img.save_with_format(&name, image::ImageFormat::Png).unwrap();
-                // Find edge loops
 
                 i += 1;
             }
 
-            let svg_path = bits_to_paths(self.size as usize, self.size as usize, &max_img, true);
-            println!("{}", svg_path);
+            let paths = bits_to_paths(self.size as usize, self.size as usize, &max_img);
+            let mut builder = lyon::path::Builder::new();
+            for path in paths {
+                let simplified_path = douglas_peucker(path, 0.0);
+                builder.polygon(&simplified_path);
+            }
+            let final_path = builder.build();
 
             // Triangulate
             // Create a simple path.
-            let svg_builder = lyon::svg::path::Path::builder().with_svg();
-            let path = build_path(svg_builder, &svg_path).unwrap();
 
             // Will contain the result of the tessellation.
             let mut geometry: VertexBuffers<glm::Vec2, i32> = VertexBuffers::new();
@@ -768,64 +847,71 @@ impl VoxelGrid {
                 // Compute the tessellation.
                 tessellator
                     .tessellate_path(
-                        &path,
+                        &final_path,
                         &FillOptions::default(),
                         &mut BuffersBuilder::new(&mut geometry, |pos: Point, _: FillAttributes| glm::vec2(pos.x, pos.y)),
                     )
                     .unwrap();
             }
 
-            // Kill degenerate triangles
+            // Remove degenerate triangles
+            // Deindex
+            // Scale to world space
+            // Align on the original plane
+            // Sort by area
+            let step = glm::length(&self.bb_diff) / self.size as f32;
             for i in 0..geometry.indices.len() / 3 {
-                let p1 = geometry.vertices[geometry.indices[i * 3] as usize];
-                let p2 = geometry.vertices[geometry.indices[i * 3 + 1] as usize];
-                let p3 = geometry.vertices[geometry.indices[i * 3 + 2] as usize];
+                let p1 = vec4(geometry.vertices[geometry.indices[i * 3 + 0] as usize].x, geometry.vertices[geometry.indices[i * 3 + 0] as usize].y, 0.0, 0.0);
+                let p2 = vec4(geometry.vertices[geometry.indices[i * 3 + 1] as usize].x, geometry.vertices[geometry.indices[i * 3 + 1] as usize].y, 0.0, 0.0);
+                let p3 = vec4(geometry.vertices[geometry.indices[i * 3 + 2] as usize].x, geometry.vertices[geometry.indices[i * 3 + 2] as usize].y, 0.0, 0.0);
+
+                let sub = vec4(128.0, 128.0, 0.0, 0.0);
+                let p1 = (p1 - sub) * step + vec4(step * 0.5, step * 0.5, 0.0, 1.0);
+                let p2 = (p2 - sub) * step + vec4(step * 0.5, step * 0.5, 0.0, 1.0);
+                let p3 = (p3 - sub) * step + vec4(step * 0.5, step * 0.5, 0.0, 1.0);
+
+                let z_offset = plane_vec * max_cut as f32 * cut_step;
+                let p1 = glm::rotate_z(&glm::one(), view.y) * glm::rotate_y(&glm::one(), view.x) * p1 + z_offset;
+                let p2 = glm::rotate_z(&glm::one(), view.y) * glm::rotate_y(&glm::one(), view.x) * p2 + z_offset;
+                let p3 = glm::rotate_z(&glm::one(), view.y) * glm::rotate_y(&glm::one(), view.x) * p3 + z_offset;
 
                 let a = glm::distance(&p1, &p2);
                 let b = glm::distance(&p2, &p3);
                 let c = glm::distance(&p3, &p1);
 
                 let s = (a + b + c) / 2.0;
-
                 let area = s * (s - a) * (s - b) * (s - c);
 
-                if area <= 2.0 {
-                    geometry.indices[i * 3] = -1;
-                    geometry.indices[i * 3 + 1] = -1;
-                    geometry.indices[i * 3 + 2] = -1;
+                if area > 0.0 {
+                    triangles.push(vec![p1, p2, p3]);
                 }
             }
 
-/*            
-            for i in 0..geometry.indices.len() {
-                let index = geometry.indices[i];
-                if index == -1 {
-                    continue;
-                }
+            triangles.sort_by_cached_key(|t| {
+                let a = glm::distance(&t[0], &t[1]);
+                let b = glm::distance(&t[1], &t[2]);
+                let c = glm::distance(&t[2], &t[0]);
 
-                if i % 3 == 0 {
-                    print!("<polygon points=\"");
-                }
+                let s = (a + b + c) / 2.0;
 
-                print!("{},{} ", geometry.vertices[index as usize].x, geometry.vertices[index as usize].y);
-
-                if i % 3 == 2 {
-                    println!("\"/>");
-                }
-            }
-            */
+                (s * (s - a) * (s - b) * (s - c)).round() as u32
+            });
             
+            // for i in 0..triangles.len() {
+            //     print!("<polygon points=\"");
+            //     print!("{},{} ", triangles[i][0].x, triangles[i][0].y);
+            //     print!("{},{} ", triangles[i][1].x, triangles[i][1].y);
+            //     print!("{},{} ", triangles[i][2].x, triangles[i][2].y);
+            //     println!("\"/>");
+            // }
+            // //
 
-            // Remove degenerate triangles, deindex, and sort them by area
-
-            //
-
-            planes_triangles.push(triangles);
+            planes_triangles.push(triangles.into_iter().flatten().collect());
         }
 
         // Decimate triangles based on limit
         // TODO: based on occlusion
 
-        planes_triangles
+        planes_triangles.into_iter().flatten().collect()
     }
 }

@@ -4,7 +4,7 @@ use rand::Rng;
 use safe_transmute::*;
 use wgpu;
 use wgpu_experiments::camera::*;
-use wgpu_experiments::pipelines::{boxes::*, mesh::MeshPipeline};
+use wgpu_experiments::pipelines::{boxes::*, mesh::MeshPipeline, triangles::TrianglesPipeline};
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton, Mesh};
 
 use crate::grid::*;
@@ -80,9 +80,15 @@ pub struct Application {
     pub grid: BoxPipelineInput,
     pub grid_bind_group: wgpu::BindGroup,
 
-    // Occluders,
+    // Box Occluders,
     pub occluders: BoxPipelineInput,
     pub occluders_bind_group: wgpu::BindGroup,
+
+    // Planar Occluders
+    pub planar_occluders_pipeline: TrianglesPipeline,
+    pub planar_occluders_bind_group: wgpu::BindGroup,
+    pub planar_occluders: wgpu::Buffer,
+    pub planar_occluders_len: usize,
 }
 
 impl Application {
@@ -358,7 +364,36 @@ impl Application {
             ],
         });
 
-        let occluders_planar = voxel_grid.get_planar_occluders(&device, &mut queue, 1024);
+        let planar_occluders_pipeline = TrianglesPipeline::new(&device);
+        let planar_occluders_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &planar_occluders_pipeline.bind_group_layout,
+            bindings: &[
+                Binding {
+                    binding: 0,
+                    resource: BindingResource::Buffer {
+                        buffer: &camera_buffer,
+                        range: 0..192,
+                    },
+                },
+            ],
+        });
+        let planar_occluders_len;
+        let planar_occluders = {
+            let planar_occluders = voxel_grid.get_planar_occluders(&device, &mut queue, 1024);
+            planar_occluders_len = planar_occluders.len();
+            let mut res = Vec::new();
+            for occluder in planar_occluders {
+                res.push(occluder.x);
+                res.push(occluder.y);
+                res.push(occluder.z);
+                res.push(occluder.w);
+            }
+
+            res
+        };
+        let planar_occluders = device
+            .create_buffer_mapped::<f32>(planar_occluders.len(), wgpu::BufferUsage::VERTEX)
+            .fill_from_slice(&planar_occluders);
 
         Self {
             width,
@@ -393,6 +428,11 @@ impl Application {
 
             occluders,
             occluders_bind_group,
+
+            planar_occluders_pipeline,
+            planar_occluders_bind_group,
+            planar_occluders,
+            planar_occluders_len,
         }
     }
 
@@ -458,6 +498,7 @@ impl ApplicationSkeleton for Application {
                 rpass.draw_indexed(0..self.mesh.indices_len(), 0, 0..self.atoms_len);
             }
 
+
             if self.options.render_grid {
                 rpass.set_pipeline(&self.box_pipeline_filled.pipeline);
                 rpass.set_bind_group(0, &self.grid_bind_group, &[]);
@@ -469,6 +510,24 @@ impl ApplicationSkeleton for Application {
                 rpass.set_bind_group(0, &self.occluders_bind_group, &[]);
                 rpass.draw(0..36, 0..self.occluders.count as u32);
             }
+        }
+
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: &self.multisampled_framebuffer,
+                    resolve_target: Some(frame),
+                    load_op: wgpu::LoadOp::Load,
+                    store_op: wgpu::StoreOp::Store,
+                    clear_color: wgpu::Color::WHITE,
+                }],
+                depth_stencil_attachment: None,
+            });
+
+            rpass.set_pipeline(&self.planar_occluders_pipeline.pipeline);
+            rpass.set_bind_group(0, &self.planar_occluders_bind_group, &[]);
+            rpass.set_vertex_buffers(0, &[(&self.planar_occluders, 0)]);
+            rpass.draw(0..self.planar_occluders_len as u32, 0..1);
         }
 
         self.queue.submit(&[encoder.finish()]);
