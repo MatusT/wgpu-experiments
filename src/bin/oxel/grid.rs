@@ -1,4 +1,4 @@
-use glm::{vec3, vec4, Vec3, Vec4};
+use glm::{vec2, Vec2, vec3, vec4, Vec3, Vec4};
 use image;
 use nalgebra_glm as glm;
 use safe_transmute::*;
@@ -759,7 +759,7 @@ impl VoxelGrid {
         occluders
     }
     pub fn get_planar_occluders(&mut self, device: &wgpu::Device, queue: &mut wgpu::Queue, limit: usize) -> Vec<Vec4> {
-        use lyon::math::Point;
+        use lyon::math::{Point};
         use lyon::svg::path_utils::*;
         use lyon::tessellation::*;
 
@@ -767,6 +767,7 @@ impl VoxelGrid {
 
         let no_cuts = 32;
         let cut_step = glm::length(&self.bb_diff) / no_cuts as f32;
+        let step = glm::length(&self.bb_diff) / self.size as f32;
 
         let mut views = Vec::new();
         for x in (0..180).step_by(45) {
@@ -775,7 +776,7 @@ impl VoxelGrid {
             }
         }
 
-        let mut planes_triangles: Vec<Vec<glm::Vec4>> = Vec::new();
+        let mut planes_triangles: Vec<Vec<Vec4>> = Vec::new();
         let plane_vec = vec4(0.0, 0.0, 1.0, 1.0);
         for view in &views {
             let rotation = glm::rotate_y(&glm::one(), view.x) * glm::rotate_x(&glm::one(), view.y);
@@ -788,8 +789,7 @@ impl VoxelGrid {
 
             for cut in -no_cuts / 2..=no_cuts / 2 {               
                 let mut img = Vec::new();
-                let mut area: u64 = 0;
-                let step = glm::length(&self.bb_diff) / self.size as f32;
+                let mut area: u64 = 0;                
                 for y in -self.size / 2..self.size / 2 {
                     for x in -self.size / 2..self.size / 2 {
                         // World-space coordinates
@@ -834,8 +834,14 @@ impl VoxelGrid {
             let paths = bits_to_paths(self.size as usize, self.size as usize, &max_img);
             let mut builder = lyon::path::Builder::new();
             for path in paths {
+                let mut points = Vec::new();
+                for point in path {
+                    let sub = vec2(128.0, 128.0);
+                    let point = (vec2(point.x, point.y) - sub) * step + vec2(step * 0.5, step * 0.5);
 
-                let simplified_path = douglas_peucker(path, 0.0);
+                    points.push(Point::new(point.x, point.y));
+                }
+                let simplified_path = douglas_peucker(points, 2.0 * self.voxel_size.max());
                 builder.polygon(&simplified_path);
             }
             let final_path = builder.build();
@@ -862,31 +868,25 @@ impl VoxelGrid {
             // Scale to world space
             // Align on the original plane
             // Sort by area
-            let step = glm::length(&self.bb_diff) / self.size as f32;
             for i in 0..geometry.indices.len() / 3 {
                 let p1 = vec4(
                     geometry.vertices[geometry.indices[i * 3 + 0] as usize].x,
                     geometry.vertices[geometry.indices[i * 3 + 0] as usize].y,
                     0.0,
-                    0.0,
+                    1.0,
                 );
                 let p2 = vec4(
                     geometry.vertices[geometry.indices[i * 3 + 1] as usize].x,
                     geometry.vertices[geometry.indices[i * 3 + 1] as usize].y,
                     0.0,
-                    0.0,
+                    1.0,
                 );
                 let p3 = vec4(
                     geometry.vertices[geometry.indices[i * 3 + 2] as usize].x,
                     geometry.vertices[geometry.indices[i * 3 + 2] as usize].y,
                     0.0,
-                    0.0,
+                    1.0,
                 );
-
-                let sub = vec4(128.0, 128.0, 0.0, 0.0);
-                let p1 = (p1 - sub) * step + vec4(step * 0.5, step * 0.5, 0.0, 1.0);
-                let p2 = (p2 - sub) * step + vec4(step * 0.5, step * 0.5, 0.0, 1.0);
-                let p3 = (p3 - sub) * step + vec4(step * 0.5, step * 0.5, 0.0, 1.0);
 
                 let z_offset = plane_vec * max_cut;
                 let p1 = rotation * p1 + z_offset;
@@ -915,11 +915,31 @@ impl VoxelGrid {
                 (s * (s - a) * (s - b) * (s - c)).round() as u32
             });
 
-            planes_triangles.push(triangles.clone().into_iter().flatten().collect());
+            planes_triangles.push(triangles.clone().into_iter().rev().flatten().collect());
         }
 
         // Decimate triangles based on limit
         // TODO: based on occlusion
+        let mut len = 0;
+        for v in planes_triangles.iter() {
+            len += v.len() / 3;
+        }
+        
+        let rot = planes_triangles.len();
+        let mut i = 0;
+        while len >= limit {
+            planes_triangles[i].pop();
+            planes_triangles[i].pop();
+            let res = planes_triangles[i].pop();
+
+            if res != None {
+                len -= 1;
+            }
+
+            i += 1;
+            i = i % rot;
+        }
+        
 
         planes_triangles.into_iter().flatten().collect()
     }
