@@ -4,7 +4,7 @@ use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton, Mesh};
 
 extern crate alloc;
 
-use safe_transmute::*;
+use bytemuck::*;
 use wgpu;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +29,20 @@ impl MeshType {
             MeshType::Icosahedron4,
             MeshType::Icosahedron5,
         ]
+    }
+}
+
+impl From<MeshType> for String {
+    fn from(mesh_type: MeshType) -> String {
+        match mesh_type {
+            MeshType::Billboard => String::from("Billboard"),
+            MeshType::Cube => String::from("Cube"),
+            MeshType::Icosahedron1 => String::from("Icosahedron 1"),
+            MeshType::Icosahedron2 => String::from("Icosahedron 2"),
+            MeshType::Icosahedron3 => String::from("Icosahedron 3"),
+            MeshType::Icosahedron4 => String::from("Icosahedron 4"),
+            MeshType::Icosahedron5 => String::from("Icosahedron 5"),
+        }
     }
 }
 
@@ -94,29 +108,36 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn new(width: u32, height: u32) -> Self {
+    pub async fn new(width: u32, height: u32, surface: &wgpu::Surface) -> Self {
         let options = ApplicationOptions {
-            mesh: MeshType::Cube,
-            n: 50,
+            mesh: MeshType::Billboard,
+            n: 400,
         };
 
-        let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::Default,
-            backends: wgpu::BackendBit::PRIMARY,
-        })
+        // let adapter = &wgpu::Adapter::enumerate(wgpu::BackendBit::PRIMARY)[1];
+        let adapter = wgpu::Adapter::request(
+            &wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: Some(&surface),
+            },
+            wgpu::BackendBit::PRIMARY,
+        )
+        .await
         .unwrap();
 
-        println!("{:?}", adapter.get_info().name);
+        println!("{}", adapter.get_info().name);
 
-        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
-            extensions: wgpu::Extensions {
-                anisotropic_filtering: false,
-            },
-            limits: wgpu::Limits::default(),
-        });
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                extensions: wgpu::Extensions {
+                    anisotropic_filtering: false,
+                },
+                limits: wgpu::Limits::default(),
+            })
+            .await;
 
-        let pipeline = MeshPipeline::new(&device);
         let billboards_pipeline = SphereBillboardPipeline::new(&device);
+        let pipeline = MeshPipeline::new(&device);
 
         let meshes = vec![
             Mesh::from_obj(&device, "cube.obj", 1.0),
@@ -130,9 +151,10 @@ impl Application {
 
         let aspect = width as f32 / height as f32;
         let camera = RotationCamera::new(aspect, 0.785398163, 0.1);
-        let camera_buffer = device
-            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
-            .fill_from_slice(&[camera.ubo()]);
+        let camera_buffer = device.create_buffer_with_data(
+            cast_slice(&[camera.ubo()]),
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        );
 
         let mut positions = Vec::new();
         for x in -options.n / 2..options.n / 2 {
@@ -141,15 +163,17 @@ impl Application {
                     positions.push(x as f32);
                     positions.push(y as f32);
                     positions.push(z as f32);
-                    positions.push(0.0);
+                    positions.push(1.0);
                 }
             }
         }
-        let positions_instanced_buffer = device
-            .create_buffer_mapped::<f32>(positions.len(), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST)
-            .fill_from_slice(&positions);
+        let positions_instanced_buffer = device.create_buffer_with_data(
+            cast_slice(&positions),
+            wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST,
+        );
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
             layout: &pipeline.bind_group_layout,
             bindings: &[
                 wgpu::Binding {
@@ -169,6 +193,7 @@ impl Application {
             ],
         });
         let billboards_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
             layout: &billboards_pipeline.bind_group_layout,
             bindings: &[
                 wgpu::Binding {
@@ -189,6 +214,7 @@ impl Application {
         });
 
         let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
             size: wgpu::Extent3d { width, height, depth: 1 },
             array_layer_count: 1,
             mip_level_count: 1,
@@ -200,6 +226,7 @@ impl Application {
         let depth_texture_view = depth_texture.create_default_view();
 
         let multisampled_frame_descriptor = &wgpu::TextureDescriptor {
+            label: None,
             size: wgpu::Extent3d { width, height, depth: 1 },
             array_layer_count: 1,
             mip_level_count: 1,
@@ -260,12 +287,12 @@ impl ApplicationSkeleton for Application {
     fn render(&mut self, frame: &wgpu::TextureView) {
         let n = self.options.n * self.options.n * self.options.n;
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         {
             let size = std::mem::size_of::<CameraUbo>();
-            let camera_buffer = self.device.create_buffer_mapped(size, wgpu::BufferUsage::COPY_SRC);
-            camera_buffer.data.copy_from_slice(transmute_to_bytes(&[self.camera.ubo()]));
-            let camera_buffer = camera_buffer.finish();
+            let camera_buffer = self
+                .device
+                .create_buffer_with_data(cast_slice(&[self.camera.ubo()]), wgpu::BufferUsage::COPY_SRC);
 
             encoder.copy_buffer_to_buffer(&camera_buffer, 0, &self.camera_buffer, 0, size as wgpu::BufferAddress);
         }
@@ -273,8 +300,10 @@ impl ApplicationSkeleton for Application {
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &self.multisampled_framebuffer,
-                    resolve_target: Some(frame),
+                    attachment: &frame,
+                    resolve_target: None,
+                    // attachment: &self.multisampled_framebuffer,
+                    // resolve_target: Some(frame),
                     load_op: wgpu::LoadOp::Clear,
                     store_op: wgpu::StoreOp::Store,
                     clear_color: wgpu::Color::GREEN,
@@ -300,8 +329,9 @@ impl ApplicationSkeleton for Application {
 
                 rpass.set_pipeline(&self.pipeline.pipeline);
                 rpass.set_bind_group(0, &self.bind_group, &[]);
-                rpass.set_vertex_buffers(0, &[(&mesh.vertices(), 0), (&mesh.normals(), 0)]);
-                rpass.set_index_buffer(&mesh.indices(), 0);
+                rpass.set_vertex_buffer(0, &mesh.vertices(), 0, 0);
+                rpass.set_vertex_buffer(0, &mesh.normals(), 0, 0);
+                rpass.set_index_buffer(&mesh.indices(), 0, 0);
                 rpass.draw_indexed(0..mesh.indices_len(), 0, 0..n as u32);
             }
         }

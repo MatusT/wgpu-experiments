@@ -1,10 +1,7 @@
-use glm::{vec2, Vec2, vec3, vec4, Vec3, Vec4};
-use image;
+use bytemuck::*;
+use glm::{vec2, vec3, vec4, Vec3, Vec4};
 use nalgebra_glm as glm;
-use safe_transmute::*;
 use std::collections::{HashMap, VecDeque};
-use wgpu_experiments::camera::CameraUbo;
-use wgpu_experiments::pipelines::boxes::ClippedGridPipeline;
 
 static T: [(i8, i8); 8] = [(0, -1), (1, -1), (1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1)];
 static O_VERTEX: [(i8, i8); 7] = [(-1, 0), (0, 0), (-1, -1), (0, 0), (0, -1), (0, 0), (0, 0)]; // Vertex coordinates for the outlines (bottom left) according to the orientation
@@ -13,10 +10,6 @@ static O_VALUE: [i8; 7] = [1, 0, 2, 0, 4, 0, 8]; // Value to add into the array 
 static H_VALUE: [i8; 7] = [-4, 0, -8, 0, -1, 0, -2]; // Value to add into the array of contours for the holes
 
 pub fn bits_to_paths(width: usize, height: usize, bits: &[i8]) -> Vec<Vec<lyon::math::Point>> {
-    use lyon::math::point;
-    use lyon::path::builder::*;
-    use lyon::path::Path;
-
     let rows: usize = height;
     let cols: usize = width;
 
@@ -94,9 +87,7 @@ fn trace(
     contours: &mut Vec<Vec<i8>>,
     // builder: &mut lyon::path::builder::SvgPathBuilder<lyon::path::Builder>,
 ) -> Vec<lyon::math::Point> {
-    use lyon::math::{point, Point};
-    use lyon::path::builder::*;
-    use lyon::path::Path;
+    use lyon::math::Point;
 
     let mut cx = x; // Current x
     let mut cy = y; // Current y
@@ -302,7 +293,8 @@ impl Default for ClipPlane {
     }
 }
 
-unsafe impl TriviallyTransmutable for ClipPlane {}
+unsafe impl Zeroable for ClipPlane {}
+unsafe impl Pod for ClipPlane {}
 
 impl VoxelGrid {
     // World position inside BB -> voxel space
@@ -758,9 +750,8 @@ impl VoxelGrid {
 
         occluders
     }
-    pub fn get_planar_occluders(&mut self, device: &wgpu::Device, queue: &mut wgpu::Queue, limit: usize) -> Vec<Vec4> {
-        use lyon::math::{Point};
-        use lyon::svg::path_utils::*;
+    pub fn get_planar_occluders(&mut self, device: &wgpu::Device, limit: usize) -> Vec<Vec4> {
+        use lyon::math::Point;
         use lyon::tessellation::*;
 
         let radius = glm::length(&self.bb_diff) / 2.0;
@@ -782,14 +773,14 @@ impl VoxelGrid {
             let rotation = glm::rotate_y(&glm::one(), view.x) * glm::rotate_x(&glm::one(), view.y);
             let plane_vec = rotation * plane_vec;
 
-            let mut max_plane = ClipPlane::default(); // Plane with maximum area (optional: after erosion)
+            let max_plane = ClipPlane::default(); // Plane with maximum area (optional: after erosion)
             let mut max_cut = 0.0;
             let mut max_area = 0;
             let mut max_img = Vec::new();
 
-            for cut in -no_cuts / 2..=no_cuts / 2 {               
+            for cut in -no_cuts / 2..=no_cuts / 2 {
                 let mut img = Vec::new();
-                let mut area: u64 = 0;                
+                let mut area: u64 = 0;
                 for y in -self.size / 2..self.size / 2 {
                     for x in -self.size / 2..self.size / 2 {
                         // World-space coordinates
@@ -924,7 +915,7 @@ impl VoxelGrid {
         for v in planes_triangles.iter() {
             len += v.len() / 3;
         }
-        
+
         let rot = planes_triangles.len();
         let mut i = 0;
         while len >= limit {
@@ -939,7 +930,6 @@ impl VoxelGrid {
             i += 1;
             i = i % rot;
         }
-        
 
         planes_triangles.into_iter().flatten().collect()
     }

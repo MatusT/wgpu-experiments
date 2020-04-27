@@ -1,6 +1,7 @@
 use wgpu_experiments::camera::*;
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
 
+use bytemuck::*;
 use wgpu;
 
 pub struct ApplicationOptions {}
@@ -24,31 +25,40 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn new(width: u32, height: u32) -> Self {
+    pub async fn new(width: u32, height: u32, surface: &wgpu::Surface) -> Self {
         let options = ApplicationOptions {};
 
-        let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::Default,
-            backends: wgpu::BackendBit::PRIMARY,
-        })
+        // let adapter = &wgpu::Adapter::enumerate(wgpu::BackendBit::PRIMARY)[1];
+        let adapter = wgpu::Adapter::request(
+            &wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: Some(&surface),
+            },
+            wgpu::BackendBit::PRIMARY,
+        )
+        .await
         .unwrap();
 
-        println!("{:?}", adapter.get_info().name);
+        println!("{}", adapter.get_info().name);
 
-        let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
-            extensions: wgpu::Extensions {
-                anisotropic_filtering: false,
-            },
-            limits: wgpu::Limits::default(),
-        });
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                extensions: wgpu::Extensions {
+                    anisotropic_filtering: false,
+                },
+                limits: wgpu::Limits::default(),
+            })
+            .await;
 
         let aspect = width as f32 / height as f32;
         let camera = RotationCamera::new(aspect, 0.785398163, 0.1);
-        let camera_buffer = device
-            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
-            .fill_from_slice(&[camera.ubo()]);
+        let camera_buffer = device.create_buffer_with_data(
+            cast_slice(&[camera.ubo()]),
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        );
 
         let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
             size: wgpu::Extent3d { width, height, depth: 1 },
             array_layer_count: 1,
             mip_level_count: 1,
@@ -60,6 +70,7 @@ impl Application {
         let depth_texture_view = depth_texture.create_default_view();
 
         let multisampled_frame_descriptor = &wgpu::TextureDescriptor {
+            label: None,
             size: wgpu::Extent3d { width, height, depth: 1 },
             array_layer_count: 1,
             mip_level_count: 1,
@@ -109,7 +120,7 @@ impl ApplicationSkeleton for Application {
     }
 
     fn render(&mut self, frame: &wgpu::TextureView) {
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
         {
             let rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

@@ -1,7 +1,6 @@
+use bytemuck::*;
 use lib3dmol::structures::{atom::AtomType, GetAtom};
 use nalgebra_glm as glm;
-use rand::Rng;
-use safe_transmute::*;
 use wgpu;
 use wgpu_experiments::camera::*;
 use wgpu_experiments::pipelines::{boxes::*, mesh::MeshPipeline, triangles::TrianglesPipeline};
@@ -25,15 +24,9 @@ pub struct BoxPipelineInput {
 impl BoxPipelineInput {
     pub fn new(device: &wgpu::Device, positions: &[f32], sizes: &[f32], colors: &[f32]) -> Self {
         let count = positions.len() as u32 / 4u32;
-        let positions = device
-            .create_buffer_mapped::<f32>(positions.len(), wgpu::BufferUsage::STORAGE_READ)
-            .fill_from_slice(&positions);
-        let sizes = device
-            .create_buffer_mapped::<f32>(sizes.len(), wgpu::BufferUsage::STORAGE_READ)
-            .fill_from_slice(&sizes);
-        let colors = device
-            .create_buffer_mapped::<f32>(colors.len(), wgpu::BufferUsage::STORAGE_READ)
-            .fill_from_slice(&colors);
+        let positions = device.create_buffer_with_data(cast_slice(positions), wgpu::BufferUsage::STORAGE_READ);
+        let sizes = device.create_buffer_with_data(cast_slice(sizes), wgpu::BufferUsage::STORAGE_READ);
+        let colors = device.create_buffer_with_data(cast_slice(colors), wgpu::BufferUsage::STORAGE_READ);
 
         BoxPipelineInput {
             count,
@@ -92,7 +85,7 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn new(width: u32, height: u32) -> Self {
+    pub async fn new(width: u32, height: u32, surface: &wgpu::Surface) -> Self {
         use wgpu::{Binding, BindingResource};
         let options = ApplicationOptions {
             render_molecules: true,
@@ -100,26 +93,36 @@ impl Application {
             render_aabbs: false,
         };
 
-        let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::Default,
-            backends: wgpu::BackendBit::PRIMARY,
-        })
+        let adapter = wgpu::Adapter::request(
+            &wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: Some(&surface),
+            },
+            wgpu::BackendBit::PRIMARY,
+        )
+        .await
         .unwrap();
 
-        let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
-            extensions: wgpu::Extensions {
-                anisotropic_filtering: false,
-            },
-            limits: wgpu::Limits::default(),
-        });
+        println!("{}", adapter.get_info().name);
+
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                extensions: wgpu::Extensions {
+                    anisotropic_filtering: false,
+                },
+                limits: wgpu::Limits::default(),
+            })
+            .await;
 
         let aspect = width as f32 / height as f32;
         let camera = RotationCamera::new(aspect, 0.785398163, 0.1);
-        let camera_buffer = device
-            .create_buffer_mapped(1, wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST)
-            .fill_from_slice(&[camera.ubo()]);
+        let camera_buffer = device.create_buffer_with_data(
+            cast_slice(&[camera.ubo()]),
+            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+        );
 
         let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
             size: wgpu::Extent3d { width, height, depth: 1 },
             array_layer_count: 1,
             mip_level_count: 1,
@@ -131,6 +134,7 @@ impl Application {
         let depth_texture_view = depth_texture.create_default_view();
 
         let multisampled_frame_descriptor = &wgpu::TextureDescriptor {
+            label: None,
             size: wgpu::Extent3d { width, height, depth: 1 },
             array_layer_count: 1,
             mip_level_count: 1,
@@ -170,11 +174,13 @@ impl Application {
 
         //
         let mesh = Mesh::from_obj(&device, "icosahedron_3.obj", 2.0);
-        let mesh_positions = device
-            .create_buffer_mapped::<f32>(4 * atoms_len, wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST)
-            .fill_from_slice(&atoms_f32);
+        let mesh_positions = device.create_buffer_with_data(
+            cast_slice(&atoms_f32),
+            wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST,
+        );
         let mesh_pipeline = MeshPipeline::new(&device);
         let mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
             layout: &mesh_pipeline.bind_group_layout,
             bindings: &[
                 wgpu::Binding {
@@ -206,6 +212,7 @@ impl Application {
         );
         let bounding_box_buffer_size = (bounding_box.count as usize * 4usize * std::mem::size_of::<f32>()) as u64;
         let bounding_box_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
             layout: &box_pipeline_line.bind_group_layout,
             bindings: &[
                 wgpu::Binding {
@@ -269,6 +276,7 @@ impl Application {
 
         let grid_buffer_size = (grid.count as usize * 4usize * std::mem::size_of::<f32>()) as u64;
         let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
             layout: &box_pipeline_filled.bind_group_layout,
             bindings: &[
                 Binding {
@@ -331,6 +339,7 @@ impl Application {
 
         let occluders_buffer_size = (occluders.count as usize * 4usize * std::mem::size_of::<f32>()) as u64;
         let occluders_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
             layout: &box_pipeline_filled.bind_group_layout,
             bindings: &[
                 Binding {
@@ -366,6 +375,7 @@ impl Application {
 
         let planar_occluders_pipeline = TrianglesPipeline::new(&device);
         let planar_occluders_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
             layout: &planar_occluders_pipeline.bind_group_layout,
             bindings: &[Binding {
                 binding: 0,
@@ -377,7 +387,7 @@ impl Application {
         });
         let planar_occluders_len;
         let planar_occluders = {
-            let planar_occluders = voxel_grid.get_planar_occluders(&device, &mut queue, 1024);
+            let planar_occluders = voxel_grid.get_planar_occluders(&device, 1024);
             println!("Ocluders: {}", planar_occluders.len() / 3);
             planar_occluders_len = planar_occluders.len();
             let mut res = Vec::new();
@@ -390,9 +400,7 @@ impl Application {
 
             res
         };
-        let planar_occluders = device
-            .create_buffer_mapped::<f32>(planar_occluders.len(), wgpu::BufferUsage::VERTEX)
-            .fill_from_slice(&planar_occluders);
+        let planar_occluders = device.create_buffer_with_data(cast_slice(&planar_occluders), wgpu::BufferUsage::VERTEX);
 
         Self {
             width,
@@ -454,13 +462,13 @@ impl ApplicationSkeleton for Application {
     }
 
     fn render(&mut self, frame: &wgpu::TextureView) {
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
         {
             let size = std::mem::size_of::<CameraUbo>();
-            let camera_buffer = self.device.create_buffer_mapped(size, wgpu::BufferUsage::COPY_SRC);
-            camera_buffer.data.copy_from_slice(transmute_to_bytes(&[self.camera.ubo()]));
-            let camera_buffer = camera_buffer.finish();
+            let camera_buffer = self
+                .device
+                .create_buffer_with_data(cast_slice(&[self.camera.ubo()]), wgpu::BufferUsage::COPY_SRC);
 
             encoder.copy_buffer_to_buffer(&camera_buffer, 0, &self.camera_buffer, 0, size as wgpu::BufferAddress);
         }
@@ -492,8 +500,9 @@ impl ApplicationSkeleton for Application {
             if self.options.render_molecules {
                 rpass.set_pipeline(&self.mesh_pipeline.pipeline);
                 rpass.set_bind_group(0, &self.mesh_bind_group, &[]);
-                rpass.set_vertex_buffers(0, &[(&self.mesh.vertices(), 0), (&self.mesh.normals(), 0)]);
-                rpass.set_index_buffer(&self.mesh.indices(), 0);
+                rpass.set_vertex_buffer(0, &self.mesh.vertices(), 0, 0);
+                rpass.set_vertex_buffer(0, &self.mesh.normals(), 0, 0);
+                rpass.set_index_buffer(&self.mesh.indices(), 0, 0);
                 rpass.draw_indexed(0..self.mesh.indices_len(), 0, 0..self.atoms_len);
             }
 
@@ -524,7 +533,7 @@ impl ApplicationSkeleton for Application {
 
             rpass.set_pipeline(&self.planar_occluders_pipeline.pipeline);
             rpass.set_bind_group(0, &self.planar_occluders_bind_group, &[]);
-            rpass.set_vertex_buffers(0, &[(&self.planar_occluders, 0)]);
+            rpass.set_vertex_buffer(0, &self.planar_occluders, 0, 0);
             rpass.draw(0..self.planar_occluders_len as u32, 0..1);
         }
 

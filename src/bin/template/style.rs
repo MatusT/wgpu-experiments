@@ -192,6 +192,10 @@ mod dark {
         fn value_color(&self) -> Color {
             Color::WHITE
         }
+
+        fn selection_color(&self) -> Color {
+            ACTIVE
+        }
     }
 
     pub struct Button;

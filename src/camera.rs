@@ -1,6 +1,6 @@
 use crate::ApplicationEvent;
+use bytemuck::*;
 use nalgebra_glm as glm;
-use safe_transmute::TriviallyTransmutable;
 use winit;
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -10,7 +10,8 @@ pub struct CameraUbo {
     pub projection_view: glm::Mat4,
 }
 
-unsafe impl TriviallyTransmutable for CameraUbo {}
+unsafe impl Zeroable for CameraUbo {}
+unsafe impl Pod for CameraUbo {}
 pub trait Camera {
     fn resize(&mut self, aspect: f32, fov: f32, near: f32);
     fn update(&mut self, event: ApplicationEvent);
@@ -88,7 +89,7 @@ impl Camera for RotationCamera {
             ApplicationEvent::MouseMotion { delta: (x, y) } => {
                 if self.mouse_pressed {
                     self.yaw += x as f32;
-                    self.pitch += y as f32;
+                    self.pitch -= y as f32;
                 }
             }
             _ => {}

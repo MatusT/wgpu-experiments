@@ -1,5 +1,6 @@
 use crate::application::*;
 
+use bytemuck::*;
 use iced_wgpu::Renderer;
 use iced_winit::{slider, Align, Color, Column, Container, Element, Length, Radio, Row, Slider, Text};
 
@@ -31,7 +32,7 @@ impl UserInterface {
                             positions.push(x as f32);
                             positions.push(y as f32);
                             positions.push(z as f32);
-                            positions.push(0.0);
+                            positions.push(1.0);
                         }
                     }
                 }
@@ -39,11 +40,32 @@ impl UserInterface {
 
                 application.positions_instanced_buffer = application
                     .device
-                    .create_buffer_mapped::<f32>(positions.len(), wgpu::BufferUsage::STORAGE_READ)
-                    .fill_from_slice(&positions);
+                    .create_buffer_with_data(cast_slice(&positions), wgpu::BufferUsage::STORAGE_READ);
 
                 application.bind_group = application.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
                     layout: &application.pipeline.bind_group_layout,
+                    bindings: &[
+                        wgpu::Binding {
+                            binding: 0,
+                            resource: wgpu::BindingResource::Buffer {
+                                buffer: &application.camera_buffer,
+                                range: 0..192,
+                            },
+                        },
+                        wgpu::Binding {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Buffer {
+                                buffer: &application.positions_instanced_buffer,
+                                range: 0..(positions.len() * std::mem::size_of::<f32>()) as u64,
+                            },
+                        },
+                    ],
+                });
+
+                application.billboards_bind_group = application.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &application.billboards_pipeline.bind_group_layout,
                     bindings: &[
                         wgpu::Binding {
                             binding: 0,
@@ -86,7 +108,7 @@ impl UserInterface {
                 .iter()
                 .cloned()
                 .fold(Column::new().padding(10).spacing(20), |choices, mesh_type| {
-                    choices.push(Radio::new(mesh_type, mesh_type.into(), Some(options.mesh), Message::MeshSelected))
+                    choices.push(Radio::new(mesh_type, String::from(mesh_type), Some(options.mesh), Message::MeshSelected))
                 }),
         );
 
@@ -107,7 +129,7 @@ impl UserInterface {
                                         .spacing(10)
                                         .push(Text::new("Background color").color(Color::WHITE))
                                         .push(sliders)
-                                        .push(Text::new(format!("{:?}", options.n)).size(14).color(Color::WHITE)),
+                                        .push(Text::new(format!("{} ({})", options.n, options.n * options.n * options.n)).size(14).color(Color::WHITE)),
                                 )
                                 .push(mesh_types),
                         ),
@@ -121,7 +143,6 @@ impl UserInterface {
 
 mod style {
     use iced::{button, checkbox, container, progress_bar, radio, scrollable, slider, text_input};
-
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Theme {
         Light,
@@ -254,7 +275,6 @@ mod style {
                 container::Style {
                     background: Some(Background::Color(Color::from_rgb8(0x36, 0x39, 0x3F))),
                     text_color: Some(Color::WHITE),
-                    border_radius: 3,
                     ..container::Style::default()
                 }
             }
@@ -314,6 +334,10 @@ mod style {
 
             fn value_color(&self) -> Color {
                 Color::WHITE
+            }
+
+            fn selection_color(&self) -> Color {
+                ACTIVE
             }
         }
 

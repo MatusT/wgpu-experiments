@@ -1,6 +1,7 @@
 pub mod camera;
 pub mod pipelines;
 
+use bytemuck::*;
 use obj::*;
 use std::path::Path;
 use wgpu;
@@ -25,7 +26,7 @@ pub fn load_glsl(code: &str, stage: ShaderStage) -> Vec<u32> {
 #[derive(Clone)]
 pub enum ApplicationEvent {
     Resized(winit::dpi::PhysicalSize<u32>),
-    Moved(winit::dpi::PhysicalPosition<u32>),
+    Moved(winit::dpi::PhysicalPosition<i32>),
     CloseRequested,
     Destroyed,
     DroppedFile(std::path::PathBuf),
@@ -134,7 +135,6 @@ impl ApplicationEvent {
             winit::event::DeviceEvent::Motion { axis, value } => ApplicationEvent::Motion { axis, value },
             winit::event::DeviceEvent::Button { button, state } => ApplicationEvent::Button { button, state },
             winit::event::DeviceEvent::Key(key) => ApplicationEvent::Key(key),
-            winit::event::DeviceEvent::ModifiersChanged(state) => ApplicationEvent::ModifiersChanged(state),
             _ => panic!("Device event not supported"),
         }
     }
@@ -194,9 +194,7 @@ impl Mesh {
             vertices_cpu.push(v.position[2] * scale);
         }
         let vertices_len = vertices_cpu.len() as u32;
-        let vertices = device
-            .create_buffer_mapped::<f32>(vertices_cpu.len(), wgpu::BufferUsage::VERTEX)
-            .fill_from_slice(&vertices_cpu);
+        let vertices = device.create_buffer_with_data(cast_slice(&vertices_cpu), wgpu::BufferUsage::VERTEX);
 
         let mut normals = Vec::new();
         for v in obj.vertices.iter() {
@@ -204,15 +202,11 @@ impl Mesh {
             normals.push(v.normal[1]);
             normals.push(v.normal[2]);
         }
-        let normals = device
-            .create_buffer_mapped::<f32>(normals.len(), wgpu::BufferUsage::VERTEX)
-            .fill_from_slice(&normals);
+        let normals = device.create_buffer_with_data(cast_slice(&normals), wgpu::BufferUsage::VERTEX);
 
         let indices = obj.indices;
         let indices_len = indices.len() as u32;
-        let indices = device
-            .create_buffer_mapped(indices.len(), wgpu::BufferUsage::INDEX)
-            .fill_from_slice(&indices);
+        let indices = device.create_buffer_with_data(cast_slice(&indices), wgpu::BufferUsage::INDEX);
 
         Self {
             vertices,

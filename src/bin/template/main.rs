@@ -3,13 +3,12 @@ mod style;
 mod ui;
 
 use iced_wgpu::{wgpu, Primitive, Renderer, Settings, Target, Viewport};
-use iced_winit::{winit, Cache, Clipboard, MouseCursor, Size, UserInterface};
+use iced_winit::{Cache, Clipboard, MouseCursor, Size, UserInterface};
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
 
 fn main() {
     use winit::{
         event,
-        event::DeviceEvent,
         event::ModifiersState,
         event::WindowEvent,
         event_loop::{ControlFlow, EventLoop},
@@ -29,7 +28,7 @@ fn main() {
     let mut modifiers = ModifiersState::default();
 
     // Initialize the graphics scene
-    let mut application = application::Application::new(size.width, size.height);
+    let mut application = futures::executor::block_on(application::Application::new(size.width, size.height, &surface));
 
     // Initialize swapchain
     let mut sc_desc = wgpu::SwapChainDescriptor {
@@ -37,7 +36,7 @@ fn main() {
         format: wgpu::TextureFormat::Bgra8UnormSrgb,
         width: size.width,
         height: size.height,
-        present_mode: wgpu::PresentMode::Vsync,
+        present_mode: wgpu::PresentMode::Mailbox,
     };
     let mut swap_chain = application.device().create_swap_chain(&surface, &sc_desc);
 
@@ -100,15 +99,15 @@ fn main() {
                 application.update(ApplicationEvent::from_winit_window_event(&event));
 
                 // Map window event to iced event
-                if let Some(event) = iced_winit::conversion::window_event(event, window.scale_factor(), modifiers) {
+                if let Some(event) = iced_winit::conversion::window_event(&event, window.scale_factor(), modifiers) {
                     events.push(event);
                 }
             }
             event::Event::DeviceEvent { event, .. } => {
                 match event {
-                    DeviceEvent::ModifiersChanged(new_modifiers) => {
-                        modifiers = new_modifiers;
-                    }
+                    // DeviceEvent::ModifiersChanged(new_modifiers) => {
+                    //     modifiers = new_modifiers;
+                    // }
                     _ => {}
                 }
                 // Send device event to the graphics scene
@@ -171,7 +170,7 @@ fn main() {
             }
             //
             event::Event::RedrawRequested(_) => {
-                let frame = swap_chain.get_next_texture();
+                let frame = swap_chain.get_next_texture().unwrap();
                 // .expect("Timeout when acquiring next swap chain texture");
 
                 // if resized {
@@ -195,7 +194,7 @@ fn main() {
                 if ui_on {
                     let mut encoder = application
                         .device()
-                        .create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+                        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
                     let viewport = Viewport::new(sc_desc.width, sc_desc.height);
                     let mouse_cursor = renderer.draw(
                         application.device_mut(),
