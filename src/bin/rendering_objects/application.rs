@@ -126,6 +126,7 @@ impl Application {
         .unwrap();
 
         println!("{}", adapter.get_info().name);
+        println!("{:?}", adapter.get_info().backend);
 
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -157,13 +158,14 @@ impl Application {
         );
 
         let mut positions = Vec::new();
-        for x in -options.n / 2..options.n / 2 {
-            for y in -options.n / 2..options.n / 2 {
-                for z in -options.n / 2..options.n / 2 {
+        for z in -options.n / 2..options.n / 2 {
+            for x in -options.n / 2..options.n / 2 {
+                for y in -options.n / 2..options.n / 2 {
                     positions.push(x as f32);
                     positions.push(y as f32);
                     positions.push(z as f32);
                     positions.push(1.0);
+                
                 }
             }
         }
@@ -322,7 +324,7 @@ impl ApplicationSkeleton for Application {
             if self.options.mesh == MeshType::Billboard {
                 rpass.set_pipeline(&self.billboards_pipeline.pipeline);
                 rpass.set_bind_group(0, &self.billboards_bind_group, &[]);
-                rpass.draw(0..(n * 3) as u32, 0..1);
+                rpass.draw(0..(n * 6) as u32, 0..1);
             } else {
                 let mesh_index: usize = self.options.mesh.into();
                 let mesh = &self.meshes[mesh_index];

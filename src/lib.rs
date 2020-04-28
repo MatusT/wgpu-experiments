@@ -105,6 +105,7 @@ impl ApplicationEvent {
                 input,
                 is_synthetic,
             },
+            winit::event::WindowEvent::ModifiersChanged(modifiers) => ApplicationEvent::ModifiersChanged(modifiers),
             winit::event::WindowEvent::CursorMoved { device_id, position, .. } => ApplicationEvent::CursorMoved { device_id, position },
             winit::event::WindowEvent::CursorEntered { device_id } => ApplicationEvent::CursorEntered { device_id },
             winit::event::WindowEvent::CursorLeft { device_id } => ApplicationEvent::CursorLeft { device_id },
