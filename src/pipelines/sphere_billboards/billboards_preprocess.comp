@@ -1,0 +1,48 @@
+#version 460
+
+layout(local_size_x = 32) in;
+
+layout(set = 0, binding = 0, std140) uniform CameraMatrices {
+  mat4 projection;
+  mat4 view;
+  mat4 projection_view;
+};
+
+layout(set = 0, binding = 1, std430) readonly buffer InstancedPositions {
+  vec4 positions[];
+};
+
+layout(set = 0, binding = 2, std430) writeonly buffer Vertices {
+  vec3 vertices[];
+};
+
+const vec2 vertices[6] = {
+    vec2(-0.5, -0.5),
+    vec2(0.5, -0.5),
+    vec2(-0.5, 0.5),
+    vec2(-0.5, 0.5),
+    vec2(0.5, -0.5),
+    vec2(0.5, 0.5),
+};
+
+void main(void) {
+    const uint id = gl_GlobalInvocationID.x;
+
+    const vec4 world_position = positions[id];
+
+    for(uint i = 0; i < 6; i++) {
+        const vec2 vertex = vertices[i];
+
+        const vec3 CameraRight_worldspace = vec3(view[0][0], view[1][0], view[2][0]);
+        const vec3 CameraUp_worldspace = vec3(view[0][1], view[1][1], view[2][1]);
+        const vec4 position_worldspace = vec4(
+            world_position.xyz +
+            vertex.x * CameraRight_worldspace +
+            vertex.y * CameraUp_worldspace, 1.0);
+
+        vec4 clip_space = position_clip_space = projection_view * position_worldspace; 
+        clip_space.xyz /= clip_space.w;   
+        
+        vertices[id * 6 + i] = clip_space.xyz;
+    }
+}
