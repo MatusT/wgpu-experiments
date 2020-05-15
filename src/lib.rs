@@ -1,5 +1,7 @@
 pub mod camera;
+pub mod pdb_loader;
 pub mod pipelines;
+pub mod kmeans;
 
 use bytemuck::*;
 use obj::*;

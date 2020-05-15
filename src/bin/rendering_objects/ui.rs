@@ -42,48 +42,7 @@ impl UserInterface {
                     .device
                     .create_buffer_with_data(cast_slice(&positions), wgpu::BufferUsage::STORAGE_READ);
 
-                application.bind_group = application.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: None,
-                    layout: &application.pipeline.bind_group_layout,
-                    bindings: &[
-                        wgpu::Binding {
-                            binding: 0,
-                            resource: wgpu::BindingResource::Buffer {
-                                buffer: &application.camera_buffer,
-                                range: 0..192,
-                            },
-                        },
-                        wgpu::Binding {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Buffer {
-                                buffer: &application.positions_instanced_buffer,
-                                range: 0..(positions.len() * std::mem::size_of::<f32>()) as u64,
-                            },
-                        },
-                    ],
-                });
-
-                application.billboards_bind_group = application.device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: None,
-                    layout: &application.billboards_pipeline.bind_group_layout,
-                    bindings: &[
-                        wgpu::Binding {
-                            binding: 0,
-                            resource: wgpu::BindingResource::Buffer {
-                                buffer: &application.camera_buffer,
-                                range: 0..192,
-                            },
-                        },
-                        wgpu::Binding {
-                            binding: 1,
-                            resource: wgpu::BindingResource::Buffer {
-                                buffer: &application.positions_instanced_buffer,
-                                range: 0..(positions.len() * std::mem::size_of::<f32>()) as u64,
-                            },
-                        },
-                    ],
-                });
-
+                application.positions_len = positions.len();
                 application.options.n = n as i32;
             }
             Message::MeshSelected(mesh) => {
@@ -103,14 +62,23 @@ impl UserInterface {
                     Message::NumberCubesChanged(n)
                 }));
 
-        let mesh_types = Column::new().padding(20).spacing(10).push(Text::new("Mesh").size(24)).push(
-            MeshType::all()
-                .iter()
-                .cloned()
-                .fold(Column::new().padding(10).spacing(20), |choices, mesh_type| {
-                    choices.push(Radio::new(mesh_type, String::from(mesh_type), Some(options.mesh), Message::MeshSelected))
-                }),
-        );
+        let mesh_types = Column::new()
+            .padding(20)
+            .spacing(10)
+            .push(Text::new("Mesh").size(24))
+            .push(
+                MeshType::all()
+                    .iter()
+                    .cloned()
+                    .fold(Column::new().padding(10).spacing(20), |choices, mesh_type| {
+                        choices.push(Radio::new(
+                            mesh_type,
+                            String::from(mesh_type),
+                            Some(options.mesh),
+                            Message::MeshSelected,
+                        ))
+                    }),
+            );
 
         Column::new()
             .push(
@@ -129,7 +97,11 @@ impl UserInterface {
                                         .spacing(10)
                                         .push(Text::new("Background color").color(Color::WHITE))
                                         .push(sliders)
-                                        .push(Text::new(format!("{} ({})", options.n, options.n * options.n * options.n)).size(14).color(Color::WHITE)),
+                                        .push(
+                                            Text::new(format!("{} ({})", options.n, options.n * options.n * options.n))
+                                                .size(14)
+                                                .color(Color::WHITE),
+                                        ),
                                 )
                                 .push(mesh_types),
                         ),

@@ -1,5 +1,5 @@
 use wgpu_experiments::camera::*;
-use wgpu_experiments::pipelines::{mesh::MeshPipeline, sphere_billboards::SphereBillboardPipeline};
+use wgpu_experiments::pipelines::{mesh::MeshPipeline, sphere_billboards::*};
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton, Mesh};
 
 extern crate alloc;
@@ -89,13 +89,13 @@ pub struct Application {
     pub queue: wgpu::Queue,
 
     pub pipeline: MeshPipeline,
-    pub bind_group: wgpu::BindGroup,
-
     pub billboards_pipeline: SphereBillboardPipeline,
-    pub billboards_bind_group: wgpu::BindGroup,
+    pub billboards_preprocess: BillboardsPreprocessPipeline,
+    pub billboards_passthrough: BillboardsPassthroughPipeline,
 
     pub depth_texture: wgpu::Texture,
     pub depth_texture_view: wgpu::TextureView,
+    pub dumb_texture_0: wgpu::TextureView,
 
     pub multisampled_framebuffer: wgpu::TextureView,
 
@@ -104,14 +104,16 @@ pub struct Application {
     pub camera: RotationCamera,
     pub camera_buffer: wgpu::Buffer,
 
+    pub positions_len: usize,
     pub positions_instanced_buffer: wgpu::Buffer,
+    pub positions_clip_space_buffer: wgpu::Buffer,
 }
 
 impl Application {
     pub async fn new(width: u32, height: u32, surface: &wgpu::Surface) -> Self {
         let options = ApplicationOptions {
             mesh: MeshType::Billboard,
-            n: 400,
+            n: 300,
         };
 
         // let adapter = &wgpu::Adapter::enumerate(wgpu::BackendBit::PRIMARY)[1];
@@ -136,9 +138,6 @@ impl Application {
                 limits: wgpu::Limits::default(),
             })
             .await;
-
-        let billboards_pipeline = SphereBillboardPipeline::new(&device);
-        let pipeline = MeshPipeline::new(&device);
 
         let meshes = vec![
             Mesh::from_obj(&device, "cube.obj", 1.0),
@@ -165,7 +164,6 @@ impl Application {
                     positions.push(y as f32);
                     positions.push(z as f32);
                     positions.push(1.0);
-                
                 }
             }
         }
@@ -173,54 +171,26 @@ impl Application {
             cast_slice(&positions),
             wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST,
         );
+        let positions_len = positions.len();
 
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let positions_clip_space_buffer_size = (options.n * options.n * options.n) as usize * 3 * 4 * std::mem::size_of::<f32>();
+        let positions_clip_space_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            layout: &pipeline.bind_group_layout,
-            bindings: &[
-                wgpu::Binding {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &camera_buffer,
-                        range: 0..192,
-                    },
-                },
-                wgpu::Binding {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &positions_instanced_buffer,
-                        range: 0..(positions.len() * std::mem::size_of::<f32>()) as u64,
-                    },
-                },
-            ],
+            size: positions_clip_space_buffer_size as wgpu::BufferAddress,
+            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::VERTEX,
         });
-        let billboards_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &billboards_pipeline.bind_group_layout,
-            bindings: &[
-                wgpu::Binding {
-                    binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &camera_buffer,
-                        range: 0..192,
-                    },
-                },
-                wgpu::Binding {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: &positions_instanced_buffer,
-                        range: 0..(positions.len() * std::mem::size_of::<f32>()) as u64,
-                    },
-                },
-            ],
-        });
+
+        let billboards_pipeline = SphereBillboardPipeline::new(&device);
+        let pipeline = MeshPipeline::new(&device);
+        let billboards_preprocess = BillboardsPreprocessPipeline::new(&device);
+        let billboards_passthrough = BillboardsPassthroughPipeline::new(&device);
 
         let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d { width, height, depth: 1 },
             array_layer_count: 1,
             mip_level_count: 1,
-            sample_count: 4,
+            sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
@@ -232,13 +202,24 @@ impl Application {
             size: wgpu::Extent3d { width, height, depth: 1 },
             array_layer_count: 1,
             mip_level_count: 1,
-            sample_count: 4,
+            sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Bgra8UnormSrgb,
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
         };
-
         let multisampled_framebuffer = device.create_texture(multisampled_frame_descriptor).create_default_view();
+
+        let dumb_texture_0 = &wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d { width, height, depth: 1 },
+            array_layer_count: 1,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba32Float,
+            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
+        };
+        let dumb_texture_0 = device.create_texture(dumb_texture_0).create_default_view();
 
         Self {
             width,
@@ -249,22 +230,24 @@ impl Application {
             queue,
 
             pipeline,
-            bind_group,
 
             billboards_pipeline,
-            billboards_bind_group,
+            billboards_preprocess,
+            billboards_passthrough,
 
             depth_texture,
             depth_texture_view,
-
             multisampled_framebuffer,
+            dumb_texture_0,
 
             meshes,
 
             camera,
             camera_buffer,
 
+            positions_len,
             positions_instanced_buffer,
+            positions_clip_space_buffer,
         }
     }
 
@@ -299,17 +282,105 @@ impl ApplicationSkeleton for Application {
             encoder.copy_buffer_to_buffer(&camera_buffer, 0, &self.camera_buffer, 0, size as wgpu::BufferAddress);
         }
 
+        // {
+        //     let mut preprocess_pass = encoder.begin_compute_pass();
+        //     preprocess_pass.set_bind_group(0, &self.billboards_preprocess_bind_group, &[]);
+        //     preprocess_pass.set_pipeline(&self.billboards_preprocess.pipeline);
+        //     preprocess_pass.dispatch((n / 1024) as u32, 1, 1);
+        // }
+
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &self.pipeline.bind_group_layout,
+            bindings: &[
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &self.camera_buffer,
+                        range: 0..192,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &self.positions_instanced_buffer,
+                        range: 0..(self.positions_len * std::mem::size_of::<f32>()) as u64,
+                    },
+                },
+            ],
+        });
+        let billboards_bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &self.billboards_pipeline.bind_group_layout,
+            bindings: &[
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &self.camera_buffer,
+                        range: 0..192,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &self.positions_instanced_buffer,
+                        range: 0..(self.positions_len * std::mem::size_of::<f32>()) as u64,
+                    },
+                },
+            ],
+        });
+
+        // let billboards_preprocess = BillboardsPreprocessPipeline::new(&device);
+        // let billboards_preprocess_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        //     label: None,
+        //     layout: &billboards_preprocess.bind_group_layout,
+        //     bindings: &[
+        //         wgpu::Binding {
+        //             binding: 0,
+        //             resource: wgpu::BindingResource::Buffer {
+        //                 buffer: &camera_buffer,
+        //                 range: 0..192,
+        //             },
+        //         },
+        //         wgpu::Binding {
+        //             binding: 1,
+        //             resource: wgpu::BindingResource::Buffer {
+        //                 buffer: &positions_instanced_buffer,
+        //                 range: 0..(positions.len() * std::mem::size_of::<f32>()) as u64,
+        //             },
+        //         },
+        //         wgpu::Binding {
+        //             binding: 2,
+        //             resource: wgpu::BindingResource::Buffer {
+        //                 buffer: &positions_clip_space_buffer,
+        //                 range: 0..positions_clip_space_buffer_size as u64,
+        //             },
+        //         },
+        //     ],
+        // });
+
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &frame,
-                    resolve_target: None,
-                    // attachment: &self.multisampled_framebuffer,
-                    // resolve_target: Some(frame),
-                    load_op: wgpu::LoadOp::Clear,
-                    store_op: wgpu::StoreOp::Store,
-                    clear_color: wgpu::Color::GREEN,
-                }],
+                color_attachments: &[
+                    wgpu::RenderPassColorAttachmentDescriptor {
+                        attachment: &frame,
+                        resolve_target: None,
+                        // attachment: &self.multisampled_framebuffer,
+                        // resolve_target: Some(frame),
+                        load_op: wgpu::LoadOp::Clear,
+                        store_op: wgpu::StoreOp::Store,
+                        clear_color: wgpu::Color::GREEN,
+                    },
+                    wgpu::RenderPassColorAttachmentDescriptor {
+                        attachment: &self.dumb_texture_0,
+                        resolve_target: None,
+                        // attachment: &self.multisampled_framebuffer,
+                        // resolve_target: Some(frame),
+                        load_op: wgpu::LoadOp::Clear,
+                        store_op: wgpu::StoreOp::Store,
+                        clear_color: wgpu::Color::GREEN,
+                    },
+                ],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
                     attachment: &self.depth_texture_view,
                     depth_load_op: wgpu::LoadOp::Clear,
@@ -323,16 +394,20 @@ impl ApplicationSkeleton for Application {
 
             if self.options.mesh == MeshType::Billboard {
                 rpass.set_pipeline(&self.billboards_pipeline.pipeline);
-                rpass.set_bind_group(0, &self.billboards_bind_group, &[]);
-                rpass.draw(0..(n * 6) as u32, 0..1);
+                rpass.set_bind_group(0, &billboards_bind_group, &[]);
+                rpass.draw(0..(n * 3) as u32, 0..1);
+
+            // rpass.set_pipeline(&self.billboards_passthrough.pipeline);
+            // rpass.set_vertex_buffer(0, &self.positions_clip_space_buffer, 0, 0);
+            // rpass.draw(0..(n * 3) as u32, 0..1);
             } else {
                 let mesh_index: usize = self.options.mesh.into();
                 let mesh = &self.meshes[mesh_index];
 
                 rpass.set_pipeline(&self.pipeline.pipeline);
-                rpass.set_bind_group(0, &self.bind_group, &[]);
+                rpass.set_bind_group(0, &bind_group, &[]);
                 rpass.set_vertex_buffer(0, &mesh.vertices(), 0, 0);
-                rpass.set_vertex_buffer(0, &mesh.normals(), 0, 0);
+                rpass.set_vertex_buffer(1, &mesh.normals(), 0, 0);
                 rpass.set_index_buffer(&mesh.indices(), 0, 0);
                 rpass.draw_indexed(0..mesh.indices_len(), 0, 0..n as u32);
             }

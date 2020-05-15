@@ -3,7 +3,8 @@ use lib3dmol::structures::{atom::AtomType, GetAtom};
 use nalgebra_glm as glm;
 use wgpu;
 use wgpu_experiments::camera::*;
-use wgpu_experiments::pipelines::{boxes::*, mesh::MeshPipeline, triangles::TrianglesPipeline};
+use wgpu_experiments::pdb_loader;
+use wgpu_experiments::pipelines::{boxes::*, mesh::MeshPipeline, sphere_billboards::SphereBillboardPipeline};
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton, Mesh};
 
 use crate::grid::*;
@@ -24,9 +25,12 @@ pub struct BoxPipelineInput {
 impl BoxPipelineInput {
     pub fn new(device: &wgpu::Device, positions: &[f32], sizes: &[f32], colors: &[f32]) -> Self {
         let count = positions.len() as u32 / 4u32;
-        let positions = device.create_buffer_with_data(cast_slice(positions), wgpu::BufferUsage::STORAGE_READ);
-        let sizes = device.create_buffer_with_data(cast_slice(sizes), wgpu::BufferUsage::STORAGE_READ);
-        let colors = device.create_buffer_with_data(cast_slice(colors), wgpu::BufferUsage::STORAGE_READ);
+        assert_eq!(positions.len(), sizes.len());
+        assert_eq!(sizes.len(), colors.len());
+        let positions =
+            device.create_buffer_with_data(cast_slice(positions), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST);
+        let sizes = device.create_buffer_with_data(cast_slice(sizes), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST);
+        let colors = device.create_buffer_with_data(cast_slice(colors), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST);
 
         BoxPipelineInput {
             count,
@@ -49,18 +53,15 @@ pub struct Application {
     pub depth_texture: wgpu::Texture,
     pub depth_texture_view: wgpu::TextureView,
 
-    pub multisampled_framebuffer: wgpu::TextureView,
-
-    pub voxel_grid: VoxelGrid,
-
     pub camera: RotationCamera,
     pub camera_buffer: wgpu::Buffer,
 
     // Spheres rendering
-    pub mesh_pipeline: MeshPipeline,
-    pub mesh_bind_group: wgpu::BindGroup,
-    pub mesh: Mesh,
+    pub billboards_pipeline: SphereBillboardPipeline,
+    pub billboards_bind_group: wgpu::BindGroup,
     pub atoms_len: u32,
+    /*
+    pub voxel_grid: VoxelGrid,
 
     pub box_pipeline_line: BoxPipeline,
     pub box_pipeline_filled: BoxPipeline,
@@ -68,7 +69,9 @@ pub struct Application {
     // Enclosing bounding box
     pub bounding_box: BoxPipelineInput,
     pub bounding_box_bind_group: wgpu::BindGroup,
+    */
 
+    /*
     // Grid
     pub grid: BoxPipelineInput,
     pub grid_bind_group: wgpu::BindGroup,
@@ -82,6 +85,7 @@ pub struct Application {
     pub planar_occluders_bind_group: wgpu::BindGroup,
     pub planar_occluders: wgpu::Buffer,
     pub planar_occluders_len: usize,
+    */
 }
 
 impl Application {
@@ -126,62 +130,38 @@ impl Application {
             size: wgpu::Extent3d { width, height, depth: 1 },
             array_layer_count: 1,
             mip_level_count: 1,
-            sample_count: 4,
+            sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Depth32Float,
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
         });
         let depth_texture_view = depth_texture.create_default_view();
 
-        let multisampled_frame_descriptor = &wgpu::TextureDescriptor {
-            label: None,
-            size: wgpu::Extent3d { width, height, depth: 1 },
-            array_layer_count: 1,
-            mip_level_count: 1,
-            sample_count: 4,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Bgra8UnormSrgb,
-            usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-        };
-
-        let multisampled_framebuffer = device.create_texture(multisampled_frame_descriptor).create_default_view();
-
         //
         let args: Vec<String> = std::env::args().collect();
         let file_name: &str = &args[1];
-        let molecule_structure = lib3dmol::parser::read_pdb(file_name, "");
-        let mut atoms = Vec::new();
-        for atom in molecule_structure.get_atom() {
-            let radius = match atom.a_type {
-                AtomType::Carbon => 1.548,
-                AtomType::Hydrogen => 1.100,
-                AtomType::Nitrogen => 1.400,
-                AtomType::Oxygen => 1.348,
-                _ => 1.0,
-                // 'P': 1.880,
-                // 'S': 1.880,
-                // 'A': 1.5
-            };
-            atoms.push(glm::vec4(atom.coord[0], atom.coord[1], atom.coord[2], radius));
-        }
+        let mut atoms = pdb_loader::load_molecules(std::path::Path::new(file_name));
         let atoms_len = atoms.len();
 
-        let mut voxel_grid = VoxelGrid::new(&mut atoms);
         let mut atoms_f32 = Vec::new();
         for atom in atoms.iter() {
             atoms_f32.extend_from_slice(&[atom.x, atom.y, atom.z, atom.w]);
         }
 
-        //
-        let mesh = Mesh::from_obj(&device, "icosahedron_3.obj", 2.0);
-        let mesh_positions = device.create_buffer_with_data(
+        for f in &atoms_f32 {
+            assert!(f.is_finite());
+        }
+
+        let spheres_positions = device.create_buffer_with_data(
             cast_slice(&atoms_f32),
             wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST,
         );
-        let mesh_pipeline = MeshPipeline::new(&device);
-        let mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+
+        //
+        let billboards_pipeline = SphereBillboardPipeline::new(&device);
+        let billboards_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
-            layout: &mesh_pipeline.bind_group_layout,
+            layout: &billboards_pipeline.bind_group_layout,
             bindings: &[
                 wgpu::Binding {
                     binding: 0,
@@ -193,13 +173,17 @@ impl Application {
                 wgpu::Binding {
                     binding: 1,
                     resource: wgpu::BindingResource::Buffer {
-                        buffer: &mesh_positions,
+                        buffer: &spheres_positions,
                         range: 0..(4 * atoms_len * std::mem::size_of::<f32>()) as u64,
                     },
                 },
             ],
         });
 
+        println!("Loading done.");
+
+        /*
+        let mut voxel_grid = VoxelGrid::new(&mut atoms);
         let box_pipeline_line = BoxPipeline::new(&device, BoxRendering::Line);
         let box_pipeline_filled = BoxPipeline::new(&device, BoxRendering::Filled);
 
@@ -245,8 +229,10 @@ impl Application {
                 },
             ],
         });
+        */
 
-        let mut rng = rand::thread_rng();
+        /*
+        println!("Box pipeline done.");
 
         let grid = {
             let mut positions: Vec<f32> = Vec::new();
@@ -273,6 +259,8 @@ impl Application {
 
             BoxPipelineInput::new(&device, &positions, &sizes, &colors)
         };
+
+        println!("Grid done.");
 
         let grid_buffer_size = (grid.count as usize * 4usize * std::mem::size_of::<f32>()) as u64;
         let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -310,25 +298,12 @@ impl Application {
             ],
         });
 
+        println!("Grid buffers done.");
+
         let occluders = {
             let mut positions: Vec<f32> = Vec::new();
             let mut sizes: Vec<f32> = Vec::new();
             let mut colors: Vec<f32> = Vec::new();
-
-            // let occluders = voxel_grid.get_box_occluders(1);
-
-            // for (bb_min, bb_max) in occluders.iter() {
-            //     let bb_max: glm::Vec3 = voxel_grid.to_ws(*bb_max) + voxel_grid.voxel_halfsize;
-            //     let bb_min: glm::Vec3 = voxel_grid.to_ws(*bb_min) - voxel_grid.voxel_halfsize;
-
-            //     let position = (bb_max + bb_min) * 0.5;
-            //     let size = (bb_max - bb_min).abs();
-            //     let color = glm::vec3(0.0, 1.0, 0.0);
-
-            //     positions.extend_from_slice(&[position.x, position.y, position.z, 1.0]);
-            //     sizes.extend_from_slice(&[size.x, size.y, size.z, 1.0]);
-            //     colors.extend_from_slice(&[rng.gen::<f32>(), rng.gen::<f32>(), rng.gen::<f32>(), 1.0]);
-            // }
 
             positions.extend_from_slice(&[0.0, 0.0, 0.0, 1.0]);
             sizes.extend_from_slice(&[1.0, 1.0, 1.0, 1.0]);
@@ -387,7 +362,7 @@ impl Application {
         });
         let planar_occluders_len;
         let planar_occluders = {
-            let planar_occluders = voxel_grid.get_planar_occluders(&device, 1024);
+            let planar_occluders = voxel_grid.get_planar_occluders(100000);
             println!("Ocluders: {}", planar_occluders.len() / 3);
             planar_occluders_len = planar_occluders.len();
             let mut res = Vec::new();
@@ -401,6 +376,7 @@ impl Application {
             res
         };
         let planar_occluders = device.create_buffer_with_data(cast_slice(&planar_occluders), wgpu::BufferUsage::VERTEX);
+        */
 
         Self {
             width,
@@ -412,24 +388,24 @@ impl Application {
             depth_texture,
             depth_texture_view,
 
-            multisampled_framebuffer,
-
             camera,
             camera_buffer,
 
-            voxel_grid,
+            billboards_pipeline,
+            billboards_bind_group,
 
-            mesh_pipeline,
-            mesh_bind_group,
-            mesh,
             atoms_len: atoms_len as u32,
+            /*
+            voxel_grid,
 
             box_pipeline_line,
             box_pipeline_filled,
 
             bounding_box,
             bounding_box_bind_group,
+            */
 
+            /*
             grid,
             grid_bind_group,
 
@@ -440,6 +416,7 @@ impl Application {
             planar_occluders_bind_group,
             planar_occluders,
             planar_occluders_len,
+            */
         }
     }
 
@@ -476,8 +453,8 @@ impl ApplicationSkeleton for Application {
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &self.multisampled_framebuffer,
-                    resolve_target: Some(frame),
+                    attachment: &frame,
+                    resolve_target: None,
                     load_op: wgpu::LoadOp::Clear,
                     store_op: wgpu::StoreOp::Store,
                     clear_color: wgpu::Color::WHITE,
@@ -493,19 +470,19 @@ impl ApplicationSkeleton for Application {
                 }),
             });
 
+            /*
             rpass.set_pipeline(&self.box_pipeline_line.pipeline);
             rpass.set_bind_group(0, &self.bounding_box_bind_group, &[]);
             rpass.draw(0..24, 0..1 as u32);
+            */
 
             if self.options.render_molecules {
-                rpass.set_pipeline(&self.mesh_pipeline.pipeline);
-                rpass.set_bind_group(0, &self.mesh_bind_group, &[]);
-                rpass.set_vertex_buffer(0, &self.mesh.vertices(), 0, 0);
-                rpass.set_vertex_buffer(0, &self.mesh.normals(), 0, 0);
-                rpass.set_index_buffer(&self.mesh.indices(), 0, 0);
-                rpass.draw_indexed(0..self.mesh.indices_len(), 0, 0..self.atoms_len);
+                rpass.set_pipeline(&self.billboards_pipeline.pipeline);
+                rpass.set_bind_group(0, &self.billboards_bind_group, &[]);
+                rpass.draw(0..self.atoms_len * 3, 0..1);
             }
 
+            /*
             if self.options.render_grid {
                 rpass.set_pipeline(&self.box_pipeline_filled.pipeline);
                 rpass.set_bind_group(0, &self.grid_bind_group, &[]);
@@ -517,13 +494,15 @@ impl ApplicationSkeleton for Application {
                 rpass.set_bind_group(0, &self.occluders_bind_group, &[]);
                 rpass.draw(0..36, 0..self.occluders.count as u32);
             }
+            */
         }
 
+        /*
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &self.multisampled_framebuffer,
-                    resolve_target: Some(frame),
+                    attachment: &frame,
+                    resolve_target: None,
                     load_op: wgpu::LoadOp::Load,
                     store_op: wgpu::StoreOp::Store,
                     clear_color: wgpu::Color::WHITE,
@@ -536,6 +515,7 @@ impl ApplicationSkeleton for Application {
             rpass.set_vertex_buffer(0, &self.planar_occluders, 0, 0);
             rpass.draw(0..self.planar_occluders_len as u32, 0..1);
         }
+        */
 
         self.queue.submit(&[encoder.finish()]);
     }

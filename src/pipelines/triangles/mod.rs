@@ -56,7 +56,7 @@ impl TrianglesPipeline {
             vertex_state: wgpu::VertexStateDescriptor {
                 index_format: wgpu::IndexFormat::Uint16,
                 vertex_buffers: &[wgpu::VertexBufferDescriptor {
-                    stride: 12,
+                    stride: 16,
                     step_mode: wgpu::InputStepMode::Vertex,
                     attributes: &[wgpu::VertexAttributeDescriptor {
                         offset: 0,

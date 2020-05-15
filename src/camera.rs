@@ -32,7 +32,7 @@ pub struct RotationCamera {
 
 impl RotationCamera {
     pub fn new(aspect: f32, fov: f32, near: f32) -> RotationCamera {
-        let distance = -2.0;
+        let distance = -3500.0;
         let projection = glm::reversed_infinite_perspective_rh_zo(aspect, fov, near);
 
         let mut camera = RotationCamera {
@@ -46,7 +46,7 @@ impl RotationCamera {
             pitch: 0.0,
             distance,
 
-            speed: 1.0,
+            speed: 100.0,
             mouse_pressed: false,
         };
 

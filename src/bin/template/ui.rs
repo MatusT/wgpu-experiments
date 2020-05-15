@@ -1,5 +1,4 @@
 use crate::application::*;
-use crate::style;
 
 use iced_wgpu::Renderer;
 use iced_winit::{Column, Container, Element, Text};
@@ -18,7 +17,6 @@ impl UserInterface {
 
     pub fn view<'a>(&'a mut self, _: &ApplicationOptions) -> Element<'a, Message, Renderer> {
         Container::new(Column::new().push(Text::new("Options")).padding(12))
-            .style(style::Theme::Dark)
             .into()
     }
 }

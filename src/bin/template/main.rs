@@ -1,5 +1,4 @@
 mod application;
-mod style;
 mod ui;
 
 use iced_wgpu::{wgpu, Primitive, Renderer, Settings, Target, Viewport};
@@ -170,9 +169,6 @@ fn main() {
             }
             //
             event::Event::RedrawRequested(_) => {
-                let frame = swap_chain.get_next_texture().unwrap();
-                // .expect("Timeout when acquiring next swap chain texture");
-
                 // if resized {
                 //     let size = window.inner_size();
 
@@ -185,7 +181,7 @@ fn main() {
                 //     );
                 // }
 
-                // let (frame, viewport) = swap_chain.next_frame();
+                let frame = swap_chain.get_next_texture().unwrap();
 
                 // We draw the scene first
                 application.render(&frame.view);

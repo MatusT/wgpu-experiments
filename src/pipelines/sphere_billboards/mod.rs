@@ -159,9 +159,7 @@ impl BillboardsPassthroughPipeline {
         let fs_module = device.create_shader_module(&fs_bytes);
 
         // Pipeline
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            bind_group_layouts: &[],
-        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { bind_group_layouts: &[] });
 
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             layout: &pipeline_layout,
@@ -198,15 +196,21 @@ impl BillboardsPassthroughPipeline {
             }),
             vertex_state: wgpu::VertexStateDescriptor {
                 index_format: wgpu::IndexFormat::Uint16,
-                vertex_buffers: &[],
+                vertex_buffers: &[wgpu::VertexBufferDescriptor {
+                    stride: 16,
+                    step_mode: wgpu::InputStepMode::Vertex,
+                    attributes: &[wgpu::VertexAttributeDescriptor {
+                        offset: 0,
+                        format: wgpu::VertexFormat::Float3,
+                        shader_location: 0,
+                    }],
+                }],
             },
             sample_count: 1,
             sample_mask: !0,
             alpha_to_coverage_enabled: false,
         });
 
-        Self {
-            pipeline,
-        }
+        Self { pipeline }
     }
 }

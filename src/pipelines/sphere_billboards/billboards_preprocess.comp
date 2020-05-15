@@ -12,37 +12,45 @@ layout(set = 0, binding = 1, std430) readonly buffer InstancedPositions {
   vec4 positions[];
 };
 
-layout(set = 0, binding = 2, std430) writeonly buffer Vertices {
-  vec3 vertices[];
+layout(set = 0, binding = 2, std430) writeonly buffer VerticesBuffer {
+  vec4 vertices[];
 };
 
-const vec2 vertices[6] = {
-    vec2(-0.5, -0.5),
-    vec2(0.5, -0.5),
-    vec2(-0.5, 0.5),
-    vec2(-0.5, 0.5),
-    vec2(0.5, -0.5),
-    vec2(0.5, 0.5),
+const vec2 triangle_vertices[3] = {
+    vec2(-0.86, -0.5),
+    vec2(0.86, -0.5),
+    vec2(0.0, 0.74),
 };
 
-void main(void) {
-    const uint id = gl_GlobalInvocationID.x;
+// const vec2 square_vertices[6] = {
+//     vec2(-0.5, -0.5),
+//     vec2(0.5, -0.5),
+//     vec2(-0.5, 0.5),
+//     vec2(-0.5, 0.5),
+//     vec2(0.5, -0.5),
+//     vec2(0.5, 0.5),
+// };
 
-    const vec4 world_position = positions[id];
+void main(void) {   
+    const vec3 CameraRight_worldspace = vec3(view[0][0], view[1][0], view[2][0]);
+    const vec3 CameraUp_worldspace = vec3(view[0][1], view[1][1], view[2][1]);
 
-    for(uint i = 0; i < 6; i++) {
-        const vec2 vertex = vertices[i];
+    for(uint i = gl_LocalInvocationID.x; i < 1024; i += 32) {
+      const uint id = gl_WorkGroupID.x * 1024 + i;
+      const vec4 world_position = positions[id];
+      for(int v = 0; v < 3; v++) {
+          // const vec2 vertex = square_vertices[i];
+          const vec2 vertex = triangle_vertices[v];
 
-        const vec3 CameraRight_worldspace = vec3(view[0][0], view[1][0], view[2][0]);
-        const vec3 CameraUp_worldspace = vec3(view[0][1], view[1][1], view[2][1]);
-        const vec4 position_worldspace = vec4(
-            world_position.xyz +
-            vertex.x * CameraRight_worldspace +
-            vertex.y * CameraUp_worldspace, 1.0);
+          const vec4 position_worldspace = vec4(
+              world_position.xyz +
+              vertex.x * CameraRight_worldspace +
+              vertex.y * CameraUp_worldspace, 1.0);
 
-        vec4 clip_space = position_clip_space = projection_view * position_worldspace; 
-        clip_space.xyz /= clip_space.w;   
-        
-        vertices[id * 6 + i] = clip_space.xyz;
+          vec4 clip_space = projection_view * position_worldspace; 
+          clip_space /= clip_space.w;   
+          
+          vertices[id * 3 + v] = clip_space;
+      }
     }
 }

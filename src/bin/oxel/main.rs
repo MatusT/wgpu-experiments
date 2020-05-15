@@ -20,7 +20,7 @@ fn main() {
 
     let (window, size, surface) = {
         let window = winit::window::Window::new(&event_loop).unwrap();
-        window.set_inner_size(winit::dpi::LogicalSize { width: 1920, height: 1080 });
+        window.set_inner_size(winit::dpi::LogicalSize { width: 1280, height: 720 });
         window.set_title("AABB Finding");
         let size = window.inner_size();
         let surface = wgpu::Surface::create(&window);

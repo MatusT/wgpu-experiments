@@ -373,7 +373,7 @@ impl VoxelGrid {
         let bb_diff = bb_max - bb_min;
 
         // Create voxel grid
-        let size = 256i32;
+        let size = 512i32;
 
         let voxel_size = vec3(bb_diff.x / size as f32, bb_diff.y / size as f32, bb_diff.z / size as f32);
         let voxel_halfsize = voxel_size.apply_into(|e| e * 0.5);
@@ -394,6 +394,7 @@ impl VoxelGrid {
 
             voxels,
         };
+        grid.voxels[0] = true;
 
         let offsets: [Vec3; 8] = [
             vec3(0.5, 0.5, 0.5),
@@ -750,7 +751,7 @@ impl VoxelGrid {
 
         occluders
     }
-    pub fn get_planar_occluders(&mut self, device: &wgpu::Device, limit: usize) -> Vec<Vec4> {
+    pub fn get_planar_occluders(&mut self, limit: usize) -> Vec<Vec4> {
         use lyon::math::Point;
         use lyon::tessellation::*;
 
@@ -827,7 +828,7 @@ impl VoxelGrid {
             for path in paths {
                 let mut points = Vec::new();
                 for point in path {
-                    let sub = vec2(128.0, 128.0);
+                    let sub = vec2(self.size as f32 / 2.0, self.size as f32 / 2.0);
                     let point = (vec2(point.x, point.y) - sub) * step + vec2(step * 0.5, step * 0.5);
 
                     points.push(Point::new(point.x, point.y));
