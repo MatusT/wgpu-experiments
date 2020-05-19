@@ -1,6 +1,6 @@
 use glm::{quat, quat_to_mat4, translation, vec3};
 use nalgebra_glm as glm;
-use ron::ser::{to_string_pretty, PrettyConfig};
+use ron::ser::{to_string, PrettyConfig};
 use std::io::*;
 use wgpu_experiments::rpdb;
 
@@ -57,6 +57,6 @@ fn main() {
         separate_tuple_members: true,
         enumerate_arrays: false,
     };
-    let s = to_string_pretty(&structure, pretty).expect("Serialization failed");
+    let s = to_string(&structure).expect("Serialization failed");
     std::fs::write(out_file_path, s).expect("Unable to write file");
 }

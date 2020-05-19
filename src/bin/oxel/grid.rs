@@ -372,12 +372,16 @@ impl VoxelGrid {
 
         let bb_diff = bb_max - bb_min;
 
+        println!("BB max: {:?}. BB min: {:?}. BB diff: {:?}", bb_max, bb_min, bb_diff);
+
         // Create voxel grid
-        let size = 512i32;
+        let size = 1024i32;
 
         let voxel_size = vec3(bb_diff.x / size as f32, bb_diff.y / size as f32, bb_diff.z / size as f32);
         let voxel_halfsize = voxel_size.apply_into(|e| e * 0.5);
         let voxel_diameter = glm::distance(&voxel_size, &glm::vec3(0.0, 0.0, 0.0));
+
+        println!("Voxel size: {}", voxel_size);
 
         let voxels = vec![false; (size * size * size) as usize];
 
@@ -435,18 +439,22 @@ impl VoxelGrid {
 
                         let world_position = grid.to_ws(grid_position);
                         let mut inside = true;
-                        for offset in &offsets {
-                            let world_position = vec3(
-                                world_position.x + offset.x * voxel_size.x,
-                                world_position.y + offset.y * voxel_size.y,
-                                world_position.z + offset.z * voxel_size.z,
-                            );
-
-                            if glm::distance(&atom_position, &world_position) > atom_radius {
-                                inside = false;
-                                break;
-                            }
+                        if glm::distance(&atom_position, &world_position) > atom_radius {
+                            inside = false;
+                            break;
                         }
+                        // for offset in &offsets {
+                        //     let world_position = vec3(
+                        //         world_position.x + offset.x * voxel_size.x,
+                        //         world_position.y + offset.y * voxel_size.y,
+                        //         world_position.z + offset.z * voxel_size.z,
+                        //     );
+
+                        //     if glm::distance(&atom_position, &world_position) > atom_radius {
+                        //         inside = false;
+                        //         break;
+                        //     }
+                        // }
 
                         if inside {
                             let pos = grid.to_1d(grid_position);
@@ -457,7 +465,10 @@ impl VoxelGrid {
             }
         }
 
+        println!("Voxelization done.");
+
         // Flood fill
+        /*
         let offsets: [glm::TVec3<i32>; 8] = [
             vec3(1, 1, 1),
             vec3(-1, 1, 1),
@@ -520,6 +531,9 @@ impl VoxelGrid {
                 grid.voxels[voxel_index] = true;
             }
         }
+        */
+
+        println!("Floodfill done.");
 
         grid
     }

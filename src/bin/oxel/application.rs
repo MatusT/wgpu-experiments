@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use wgpu;
 use wgpu_experiments::camera::*;
 use wgpu_experiments::pdb_loader;
-use wgpu_experiments::pipelines::{boxes::*, mesh::MeshPipeline, sphere_billboards::SphereBillboardPipeline};
+use wgpu_experiments::pipelines::{boxes::*, mesh::MeshPipeline, sphere_billboards::SphereBillboardPipeline, triangles::TrianglesPipeline};
 use wgpu_experiments::rpdb;
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton, Mesh};
 
@@ -81,8 +81,8 @@ pub struct Application {
 
     merged_buffer: wgpu::Buffer,
     merged_buffer_len: u32,
-    /*
-    pub voxel_grid: VoxelGrid,
+
+    voxel_grid: VoxelGrid,
 
     pub box_pipeline_line: BoxPipeline,
     pub box_pipeline_filled: BoxPipeline,
@@ -90,23 +90,22 @@ pub struct Application {
     // Enclosing bounding box
     pub bounding_box: BoxPipelineInput,
     pub bounding_box_bind_group: wgpu::BindGroup,
-    */
 
-    /*
     // Grid
     pub grid: BoxPipelineInput,
     pub grid_bind_group: wgpu::BindGroup,
 
     // Box Occluders,
+    /*
     pub occluders: BoxPipelineInput,
     pub occluders_bind_group: wgpu::BindGroup,
+    */
 
     // Planar Occluders
     pub planar_occluders_pipeline: TrianglesPipeline,
     pub planar_occluders_bind_group: wgpu::BindGroup,
     pub planar_occluders: wgpu::Buffer,
     pub planar_occluders_len: usize,
-    */
 }
 
 impl Application {
@@ -215,15 +214,16 @@ impl Application {
 
         // Build merged buffer
         let mut merged_buffer = Vec::new();
+        let mut merged_atoms = Vec::new();
         for (molecule_type_id, molecule_model_matrices) in structure_model_matrices.iter().enumerate() {
             let molecule = &molecules[molecule_type_id];
             for molecule_model_matrix in molecule_model_matrices {
-                // let lod_index = if molecule.lods().len() >= 3 { 2 } else { 0 };
                 for atom in molecule.lods()[0].atoms() {
                     let mut atom_position = vec3_to_vec4(&atom.xyz());
                     atom_position.w = 1.0;
                     let atom_position = molecule_model_matrix * atom_position;
                     merged_buffer.extend_from_slice(&[atom_position.x, atom_position.y, atom_position.z, atom.w]);
+                    merged_atoms.push(glm::vec4(atom_position.x, atom_position.y, atom_position.z, atom.w));
                 }
             }
         }
@@ -259,8 +259,8 @@ impl Application {
 
         println!("Loading done.");
 
-        /*
-        let mut voxel_grid = VoxelGrid::new(&mut atoms);
+        let mut voxel_grid = VoxelGrid::new(&mut merged_atoms);
+        
         let box_pipeline_line = BoxPipeline::new(&device, BoxRendering::Line);
         let box_pipeline_filled = BoxPipeline::new(&device, BoxRendering::Filled);
 
@@ -280,7 +280,7 @@ impl Application {
                     binding: 0,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &camera_buffer,
-                        range: 0..192,
+                        range: 0..std::mem::size_of::<CameraUbo>() as u64,
                     },
                 },
                 wgpu::Binding {
@@ -306,9 +306,7 @@ impl Application {
                 },
             ],
         });
-        */
 
-        /*
         println!("Box pipeline done.");
 
         let grid = {
@@ -348,7 +346,7 @@ impl Application {
                     binding: 0,
                     resource: BindingResource::Buffer {
                         buffer: &camera_buffer,
-                        range: 0..192,
+                        range: 0..std::mem::size_of::<CameraUbo>() as u64,
                     },
                 },
                 Binding {
@@ -377,6 +375,7 @@ impl Application {
 
         println!("Grid buffers done.");
 
+        /*
         let occluders = {
             let mut positions: Vec<f32> = Vec::new();
             let mut sizes: Vec<f32> = Vec::new();
@@ -424,6 +423,7 @@ impl Application {
                 },
             ],
         });
+        */
 
         let planar_occluders_pipeline = TrianglesPipeline::new(&device);
         let planar_occluders_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -453,7 +453,6 @@ impl Application {
             res
         };
         let planar_occluders = device.create_buffer_with_data(cast_slice(&planar_occluders), wgpu::BufferUsage::VERTEX);
-        */
 
         Self {
             width,
@@ -480,7 +479,7 @@ impl Application {
 
             merged_buffer,
             merged_buffer_len,
-            /*
+            
             voxel_grid,
 
             box_pipeline_line,
@@ -488,20 +487,19 @@ impl Application {
 
             bounding_box,
             bounding_box_bind_group,
-            */
 
-            /*
             grid,
             grid_bind_group,
 
+            /*
             occluders,
             occluders_bind_group,
+            */
 
             planar_occluders_pipeline,
             planar_occluders_bind_group,
             planar_occluders,
             planar_occluders_len,
-            */
         }
     }
 
@@ -555,25 +553,24 @@ impl ApplicationSkeleton for Application {
                 }),
             });
 
-            /*
+            
             rpass.set_pipeline(&self.box_pipeline_line.pipeline);
             rpass.set_bind_group(0, &self.bounding_box_bind_group, &[]);
             rpass.draw(0..24, 0..1 as u32);
-            */
-
+            
             if self.options.render_molecules {
                 rpass.set_pipeline(&self.billboards_pipeline.pipeline);
                 rpass.set_bind_group(0, &self.billboards_bind_group, &[]);
                 rpass.draw(0..self.merged_buffer_len * 3, 0..1);
             }
 
-            /*
             if self.options.render_grid {
                 rpass.set_pipeline(&self.box_pipeline_filled.pipeline);
                 rpass.set_bind_group(0, &self.grid_bind_group, &[]);
                 rpass.draw(0..36, 0..self.grid.count as u32);
             }
 
+            /*
             if self.options.render_aabbs {
                 rpass.set_pipeline(&self.box_pipeline_filled.pipeline);
                 rpass.set_bind_group(0, &self.occluders_bind_group, &[]);
@@ -582,8 +579,8 @@ impl ApplicationSkeleton for Application {
             */
         }
 
-        /*
-        {
+        
+        if self.options.render_aabbs {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &frame,
@@ -600,7 +597,7 @@ impl ApplicationSkeleton for Application {
             rpass.set_vertex_buffer(0, &self.planar_occluders, 0, 0);
             rpass.draw(0..self.planar_occluders_len as u32, 0..1);
         }
-        */
+        
 
         self.queue.submit(&[encoder.finish()]);
     }

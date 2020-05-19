@@ -18,13 +18,13 @@ layout(location = 2) out flat float scale;
 const vec2 vertices[3] = {
     vec2(-0.86, -0.5),
     vec2(0.86, -0.5),
-    vec2(0.0, 2.0),
+    vec2(0.0, 1.5),
 };
 
 void main(void) {
   const vec4 world_position = positions[gl_VertexIndex / 3];
   const vec2 vertex = world_position.w * vertices[gl_VertexIndex % 3];
-  scale = world_position.w;
+  scale = 1.0; //world_position.w;
 
   const vec3 CameraRight_worldspace = vec3(view[0][0], view[1][0], view[2][0]);
   const vec3 CameraUp_worldspace = vec3(view[0][1], view[1][1], view[2][1]);
