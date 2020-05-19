@@ -150,7 +150,7 @@ impl Application {
         ];
 
         let aspect = width as f32 / height as f32;
-        let camera = RotationCamera::new(aspect, 0.785398163, 0.1);
+        let mut camera = RotationCamera::new(aspect, 0.785398163, 0.1);
         let camera_buffer = device.create_buffer_with_data(
             cast_slice(&[camera.ubo()]),
             wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,

@@ -1,11 +1,26 @@
+use crate::rpdb;
 use glm::*;
 use lib3dmol::structures::{atom::AtomType, GetAtom};
 use nalgebra_glm as glm;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufReader, BufRead};
-use std::path::Path;
 use std::fs;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::Path;
+
+pub fn bounding_box(atoms: &[Vec4]) -> rpdb::BoundingBox {
+    // Find bounding box of the entire structure
+    let mut bb_max = vec3(std::f32::NEG_INFINITY, std::f32::NEG_INFINITY, std::f32::NEG_INFINITY);
+    let mut bb_min = vec3(std::f32::INFINITY, std::f32::INFINITY, std::f32::INFINITY);
+    for atom in atoms.iter() {
+        let atom_position = atom.xyz();
+        let atom_radius = atom[3];
+        bb_max = glm::max2(&bb_max, &(atom_position + vec3(atom_radius, atom_radius, atom_radius)));
+        bb_min = glm::min2(&bb_min, &(atom_position - vec3(atom_radius, atom_radius, atom_radius)));
+    }
+
+    rpdb::BoundingBox { min: bb_min, max: bb_max }
+}
 
 pub fn center_atoms(mut atoms: Vec<Vec4>) -> Vec<Vec4> {
     // Find bounding box of the entire structure
@@ -41,11 +56,7 @@ pub fn load_molecule(path: &Path) -> Vec<Vec4> {
             AtomType::Oxygen => 1.348,
             AtomType::Phosphorus => 1.880,
             AtomType::Sulfur => 1.880,
-            _ => {
-                println!("unknown atom type {:?}", atom.a_type);
-                1.0
-            },
-            // 'A': 1.5
+            _ => 1.0, // 'A': 1.5
         };
         atoms.push(glm::vec4(atom.coord[0], atom.coord[1], atom.coord[2], radius));
     }
@@ -71,9 +82,7 @@ pub fn load_molecules(path: &Path) -> Vec<Vec4> {
                 .unwrap()
                 .trim_end_matches(".pdb")
                 .to_ascii_uppercase();
-            let mut pdb_molecule = load_molecule(&molecule_path);
-
-            println!("Found pdb. Path: {}. Name: {}", molecule_path_str, pdb_name);
+            let pdb_molecule = load_molecule(&molecule_path);
 
             molecules.insert(pdb_name, pdb_molecule);
         }

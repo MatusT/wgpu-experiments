@@ -1,10 +1,14 @@
 use bytemuck::*;
+use glm::Mat4;
+use glm::vec3_to_vec4;
 use lib3dmol::structures::{atom::AtomType, GetAtom};
 use nalgebra_glm as glm;
+use std::collections::HashMap;
 use wgpu;
 use wgpu_experiments::camera::*;
 use wgpu_experiments::pdb_loader;
 use wgpu_experiments::pipelines::{boxes::*, mesh::MeshPipeline, sphere_billboards::SphereBillboardPipeline};
+use wgpu_experiments::rpdb;
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton, Mesh};
 
 use crate::grid::*;
@@ -41,6 +45,14 @@ impl BoxPipelineInput {
     }
 }
 
+pub struct MoleculePointer {
+    pub bounding_box: rpdb::BoundingBox,
+    pub lods_radii: Vec<f32>,
+    pub lods_vertices: Vec<std::ops::Range<u32>>,
+}
+
+pub struct StructurePointer {}
+
 pub struct Application {
     width: u32,
     height: u32,
@@ -59,7 +71,16 @@ pub struct Application {
     // Spheres rendering
     pub billboards_pipeline: SphereBillboardPipeline,
     pub billboards_bind_group: wgpu::BindGroup,
-    pub atoms_len: u32,
+
+    molecule_name_id: HashMap<String, usize>,
+
+    molecules_pointers: Vec<MoleculePointer>,
+    molecules_buffer: wgpu::Buffer,
+
+    structure_model_matrices: Vec<Vec<Mat4>>,
+
+    merged_buffer: wgpu::Buffer,
+    merged_buffer_len: u32,
     /*
     pub voxel_grid: VoxelGrid,
 
@@ -119,7 +140,7 @@ impl Application {
             .await;
 
         let aspect = width as f32 / height as f32;
-        let camera = RotationCamera::new(aspect, 0.785398163, 0.1);
+        let mut camera = RotationCamera::new(aspect, 0.785398163, 0.1);
         let camera_buffer = device.create_buffer_with_data(
             cast_slice(&[camera.ubo()]),
             wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
@@ -137,23 +158,79 @@ impl Application {
         });
         let depth_texture_view = depth_texture.create_default_view();
 
-        //
+        // Open structure file
         let args: Vec<String> = std::env::args().collect();
-        let file_name: &str = &args[1];
-        let mut atoms = pdb_loader::load_molecules(std::path::Path::new(file_name));
-        let atoms_len = atoms.len();
+        let structure_file_path: &str = &args[1];
+        let structure_folder = std::path::Path::new(structure_file_path);
+        let structure_file = std::fs::read_to_string(structure_file_path).expect("Could not open structure file.");
+        let structure: rpdb::Structure = ron::de::from_str(&structure_file).expect("Could not deserialize structure file.");
 
-        let mut atoms_f32 = Vec::new();
-        for atom in atoms.iter() {
-            atoms_f32.extend_from_slice(&[atom.x, atom.y, atom.z, atom.w]);
+        // Load Molecules
+        let mut molecule_name_id: HashMap<String, usize> = HashMap::new();
+        let mut molecules = Vec::new();
+        let mut molecules_pointers = Vec::new();
+        let mut structure_model_matrices = Vec::new();
+
+        let mut atoms = Vec::new();
+        let mut atoms_sum = 0u32;
+        let mut molecules_num = 0;
+        for (name, matrix) in structure.names.iter().zip(structure.model_matrices.iter()) {
+            let molecule_loaded = molecule_name_id.contains_key(name);
+            if !molecule_loaded {
+                // Load a molecule
+                // println!("{:?}", structure_folder.with_file_name(name.to_string() + ".ron"));
+                let molecule_file_str = std::fs::read_to_string(structure_folder.with_file_name(name.to_string() + ".ron"))
+                    .expect("Could not open structure file.");
+                let molecule: rpdb::Molecule = ron::de::from_str(&molecule_file_str).expect("Could not parse molecule.");
+
+                let mut lods_vertices: Vec<std::ops::Range<u32>> = Vec::new();
+                let mut lods_radii = Vec::new();
+                for lod in molecule.lods() {
+                    lods_radii.push(lod.max_radius());
+                    for atom in lod.atoms() {
+                        atoms.extend_from_slice(&[atom.x, atom.y, atom.z, atom.w]);
+                    }
+                    lods_vertices.push(atoms_sum * 3..(atoms_sum + lod.atoms().len() as u32) * 3);
+                    atoms_sum += lod.atoms().len() as u32;
+                }
+
+                molecules_pointers.push(MoleculePointer {
+                    bounding_box: molecule.bounding_box,
+                    lods_radii,
+                    lods_vertices,
+                });
+
+                molecules.push(molecule);
+                molecule_name_id.insert(name.clone(), molecules_num);
+                molecules_num += 1;
+                structure_model_matrices.push(Vec::new());
+            }
+
+            // println!("{} {:?}", name, molecule_name_id);
+            structure_model_matrices[molecule_name_id[name]].push(*matrix);
         }
 
-        for f in &atoms_f32 {
-            assert!(f.is_finite());
+        let molecules_buffer =
+            device.create_buffer_with_data(cast_slice(&atoms), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST);
+
+        // Build merged buffer
+        let mut merged_buffer = Vec::new();
+        for (molecule_type_id, molecule_model_matrices) in structure_model_matrices.iter().enumerate() {
+            let molecule = &molecules[molecule_type_id];
+            for molecule_model_matrix in molecule_model_matrices {
+                // let lod_index = if molecule.lods().len() >= 3 { 2 } else { 0 };
+                for atom in molecule.lods()[0].atoms() {
+                    let mut atom_position = vec3_to_vec4(&atom.xyz());
+                    atom_position.w = 1.0;
+                    let atom_position = molecule_model_matrix * atom_position;
+                    merged_buffer.extend_from_slice(&[atom_position.x, atom_position.y, atom_position.z, atom.w]);
+                }
+            }
         }
 
-        let spheres_positions = device.create_buffer_with_data(
-            cast_slice(&atoms_f32),
+        let merged_buffer_len = (merged_buffer.len() / 4) as u32;
+        let merged_buffer = device.create_buffer_with_data(
+            cast_slice(&merged_buffer),
             wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST,
         );
 
@@ -167,14 +244,14 @@ impl Application {
                     binding: 0,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &camera_buffer,
-                        range: 0..192,
+                        range: 0..std::mem::size_of::<CameraUbo>() as u64,
                     },
                 },
                 wgpu::Binding {
                     binding: 1,
                     resource: wgpu::BindingResource::Buffer {
-                        buffer: &spheres_positions,
-                        range: 0..(4 * atoms_len * std::mem::size_of::<f32>()) as u64,
+                        buffer: &merged_buffer,
+                        range: 0..(4 * merged_buffer_len as usize * std::mem::size_of::<f32>()) as u64,
                     },
                 },
             ],
@@ -394,7 +471,15 @@ impl Application {
             billboards_pipeline,
             billboards_bind_group,
 
-            atoms_len: atoms_len as u32,
+            molecule_name_id,
+
+            molecules_pointers,
+            molecules_buffer,
+
+            structure_model_matrices,
+
+            merged_buffer,
+            merged_buffer_len,
             /*
             voxel_grid,
 
@@ -479,7 +564,7 @@ impl ApplicationSkeleton for Application {
             if self.options.render_molecules {
                 rpass.set_pipeline(&self.billboards_pipeline.pipeline);
                 rpass.set_bind_group(0, &self.billboards_bind_group, &[]);
-                rpass.draw(0..self.atoms_len * 3, 0..1);
+                rpass.draw(0..self.merged_buffer_len * 3, 0..1);
             }
 
             /*

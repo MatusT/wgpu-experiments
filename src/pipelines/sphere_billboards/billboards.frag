@@ -4,6 +4,7 @@ layout(set = 0, binding = 0, std140) uniform CameraMatrices {
   mat4 projection;
   mat4 view;
   mat4 projection_view;
+  vec4 position;
 };
 
 layout(location = 0) in vec2 uv;
@@ -27,7 +28,9 @@ void main(void)
 	const vec4 fragPosClip = position_clip_space - projection[2] * offset;
 	gl_FragDepth = fragPosClip.z / fragPosClip.w;
 
-	const float diffuse = max(dot(normal, vec3(0.0, 1.0, 0.0)), 0.0);
+	const float diffuse = max(dot(-normal, normalize(position.xyz)), 0.0);
 	
+	// out_color = vec4(0.3, 0.3, 0.3, 1.0);
 	out_color = vec4(diffuse, diffuse, diffuse, 1.0);
+	// out_color = vec4(normalize(position.xyz) * 0.5 + 0.5, 1.0);
 }

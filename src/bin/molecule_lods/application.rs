@@ -1,12 +1,17 @@
+use bytemuck::*;
+use nalgebra_glm::*;
+use ron::de::from_str;
+use wgpu;
 use wgpu_experiments::camera::*;
-use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
+use wgpu_experiments::kmeans::*;
 use wgpu_experiments::pdb_loader;
 use wgpu_experiments::pipelines::sphere_billboards::SphereBillboardPipeline;
-use wgpu_experiments::kmeans;
-use bytemuck::*;
-use wgpu;
+use wgpu_experiments::rpdb;
+use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
 
-pub struct ApplicationOptions {}
+pub struct ApplicationOptions {
+    pub selected_lod: u32,
+}
 
 pub struct Application {
     width: u32,
@@ -26,12 +31,12 @@ pub struct Application {
     pub billboards_pipeline: SphereBillboardPipeline,
     pub billboards_bind_group: wgpu::BindGroup,
 
-    atoms_len: usize,
+    lods: Vec<std::ops::Range<u32>>,
 }
 
 impl Application {
     pub async fn new(width: u32, height: u32, surface: &wgpu::Surface) -> Self {
-        let options = ApplicationOptions {};
+        let options = ApplicationOptions { selected_lod: 0 };
 
         // let adapter = &wgpu::Adapter::enumerate(wgpu::BackendBit::PRIMARY)[1];
         let adapter = wgpu::Adapter::request(
@@ -56,7 +61,7 @@ impl Application {
             .await;
 
         let aspect = width as f32 / height as f32;
-        let camera = RotationCamera::new(aspect, 0.785398163, 0.1);
+        let mut camera = RotationCamera::new(aspect, 0.785398163, 0.1);
         let camera_buffer = device.create_buffer_with_data(
             cast_slice(&[camera.ubo()]),
             wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
@@ -75,17 +80,27 @@ impl Application {
         let depth_texture_view = depth_texture.create_default_view();
 
         let args: Vec<String> = std::env::args().collect();
-        let file_name: &str = &args[1];
-        let atoms = pdb_loader::load_molecule(std::path::Path::new(file_name));
-        let mut atoms_f32 = Vec::new();
-        for atom in atoms.iter() {
-            atoms_f32.extend_from_slice(&[atom.x, atom.y, atom.z, atom.w]);
+        let molecule_file_path: &str = &args[1];
+        let molecule_ron = std::fs::read_to_string(molecule_file_path).unwrap();
+        let molecule: rpdb::Molecule = from_str(&molecule_ron).unwrap();
+
+        let mut atoms = Vec::new();
+        let mut lods: Vec<std::ops::Range<u32>> = Vec::new();
+        let mut sum = 0u32;
+        for lod in molecule.lods() {
+            for atom in lod.atoms() {
+                atoms.extend_from_slice(&[atom.x, atom.y, atom.z, atom.w]);
+            }
+            lods.push(sum * 3..(sum + lod.atoms().len() as u32) * 3);
+            sum += lod.atoms().len() as u32;
         }
 
-        let spheres_positions = device.create_buffer_with_data(
-            cast_slice(&atoms_f32),
-            wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST,
-        );
+        println!("{:?}", lods);
+        camera.set_distance(distance(&molecule.bounding_box.min, &molecule.bounding_box.max));
+        camera.set_speed(distance(&molecule.bounding_box.min, &molecule.bounding_box.max));
+
+        let spheres_positions =
+            device.create_buffer_with_data(cast_slice(&atoms), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST);
 
         let billboards_pipeline = SphereBillboardPipeline::new(&device);
         let billboards_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -103,7 +118,7 @@ impl Application {
                     binding: 1,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &spheres_positions,
-                        range: 0..(atoms_f32.len() * std::mem::size_of::<f32>()) as u64,
+                        range: 0..(atoms.len() * std::mem::size_of::<f32>()) as u64,
                     },
                 },
             ],
@@ -126,7 +141,7 @@ impl Application {
             billboards_pipeline,
             billboards_bind_group,
 
-            atoms_len: atoms.len()
+            lods,
         }
     }
 
@@ -145,6 +160,39 @@ impl ApplicationSkeleton for Application {
     }
 
     fn update(&mut self, event: ApplicationEvent) {
+        use winit::event::VirtualKeyCode;
+        match event {
+            ApplicationEvent::KeyboardInput { input, .. } => {
+                if let Some(key) = input.virtual_keycode {
+                    match key {
+                        VirtualKeyCode::Numpad0 => {
+                            self.options.selected_lod = 0;
+                        }
+                        VirtualKeyCode::Numpad1 => {
+                            self.options.selected_lod = 1;
+                        }
+                        VirtualKeyCode::Numpad2 => {
+                            self.options.selected_lod = 2;
+                        }
+                        VirtualKeyCode::Numpad3 => {
+                            self.options.selected_lod = 3;
+                        }
+                        VirtualKeyCode::Numpad4 => {
+                            self.options.selected_lod = 4;
+                        }
+                        VirtualKeyCode::Numpad5 => {
+                            self.options.selected_lod = 5;
+                        }
+                        VirtualKeyCode::Numpad6 => {
+                            self.options.selected_lod = 6;
+                        }
+                        _ => {}
+                    };
+                }
+            }
+            _ => {}
+        }
+
         self.camera.update(event);
     }
 
@@ -182,7 +230,7 @@ impl ApplicationSkeleton for Application {
 
             rpass.set_pipeline(&self.billboards_pipeline.pipeline);
             rpass.set_bind_group(0, &self.billboards_bind_group, &[]);
-            rpass.draw(0..(self.atoms_len * 3) as u32, 0..1);
+            rpass.draw(self.lods[self.options.selected_lod as usize].clone(), 0..1);
         }
 
         self.queue.submit(&[encoder.finish()]);

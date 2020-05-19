@@ -16,7 +16,6 @@ impl UserInterface {
     pub fn update(&self, _: Message, _: &mut Application) {}
 
     pub fn view<'a>(&'a mut self, _: &ApplicationOptions) -> Element<'a, Message, Renderer> {
-        Container::new(Column::new().push(Text::new("Options")).padding(12))
-            .into()
+        Container::new(Column::new().push(Text::new("Options")).padding(12)).into()
     }
 }
