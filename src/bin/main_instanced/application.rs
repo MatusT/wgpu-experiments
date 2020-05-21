@@ -1,48 +1,20 @@
 use bytemuck::*;
 use glm::Mat4;
-use glm::vec3_to_vec4;
-use lib3dmol::structures::{atom::AtomType, GetAtom};
 use nalgebra_glm as glm;
 use std::collections::HashMap;
 use wgpu;
 use wgpu_experiments::camera::*;
-use wgpu_experiments::pdb_loader;
-use wgpu_experiments::pipelines::{boxes::*, mesh::MeshPipeline, sphere_billboards::SphereBillboardInstancedPipeline};
+use wgpu_experiments::pipelines::{
+    boxes::BoxDepthPipeline,
+    sphere_billboards::{SphereBillboardInstancedDepthPipeline, SphereBillboardInstancedPipeline},
+};
 use wgpu_experiments::rpdb;
-use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton, Mesh};
-
-use crate::grid::*;
+use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
 
 pub struct ApplicationOptions {
-    pub render_molecules: bool,
-    pub render_grid: bool,
+    pub render_depth_prepass: bool,
     pub render_aabbs: bool,
-}
-
-pub struct BoxPipelineInput {
-    pub count: u32,
-    pub positions: wgpu::Buffer,
-    pub sizes: wgpu::Buffer,
-    pub colors: wgpu::Buffer,
-}
-
-impl BoxPipelineInput {
-    pub fn new(device: &wgpu::Device, positions: &[f32], sizes: &[f32], colors: &[f32]) -> Self {
-        let count = positions.len() as u32 / 4u32;
-        assert_eq!(positions.len(), sizes.len());
-        assert_eq!(sizes.len(), colors.len());
-        let positions =
-            device.create_buffer_with_data(cast_slice(positions), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST);
-        let sizes = device.create_buffer_with_data(cast_slice(sizes), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST);
-        let colors = device.create_buffer_with_data(cast_slice(colors), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST);
-
-        BoxPipelineInput {
-            count,
-            positions,
-            sizes,
-            colors,
-        }
-    }
+    pub render_output: bool,
 }
 
 pub struct MoleculePointer {
@@ -69,8 +41,12 @@ pub struct Application {
     pub camera_buffer: wgpu::Buffer,
 
     // Spheres rendering
-    pub billboards_pipeline: SphereBillboardInstancedPipeline,
-    pub billboards_bind_groups: Vec<wgpu::BindGroup>,
+    billboards_pipeline: SphereBillboardInstancedPipeline,
+    billboards_bind_groups: Vec<wgpu::BindGroup>,
+    billboards_depth_pipeline: SphereBillboardInstancedDepthPipeline,
+    billboards_depth_bind_groups: Vec<wgpu::BindGroup>,
+    box_depth_pipeline_write: BoxDepthPipeline,
+    box_depth_pipeline_read: BoxDepthPipeline,
 
     molecule_name_id: HashMap<String, usize>,
 
@@ -79,15 +55,18 @@ pub struct Application {
 
     structure_model_matrices: Vec<Vec<Mat4>>,
     structure_model_matrices_buffer: Vec<wgpu::Buffer>,
+
+    aabbs_len: u64,
+    aabbs_matrices: wgpu::Buffer,
+    aabbs_fragments: wgpu::Buffer,
 }
 
 impl Application {
     pub async fn new(width: u32, height: u32, surface: &wgpu::Surface) -> Self {
-        use wgpu::{Binding, BindingResource};
         let options = ApplicationOptions {
-            render_molecules: true,
-            render_grid: false,
+            render_depth_prepass: false,
             render_aabbs: false,
+            render_output: true,
         };
 
         let adapter = wgpu::Adapter::request(
@@ -95,7 +74,7 @@ impl Application {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
             },
-            wgpu::BackendBit::PRIMARY,
+            wgpu::BackendBit::DX12,
         )
         .await
         .unwrap();
@@ -141,7 +120,7 @@ impl Application {
         let mut molecule_name_id: HashMap<String, usize> = HashMap::new();
         let mut molecules = Vec::new();
         let mut molecules_pointers = Vec::new();
-        let mut structure_model_matrices = Vec::new();        
+        let mut structure_model_matrices = Vec::new();
 
         let mut atoms = Vec::new();
         let mut atoms_sum = 0u32;
@@ -184,20 +163,28 @@ impl Application {
             structure_model_matrices[molecule_name_id[name]].push(*matrix);
         }
 
-        let atoms_buffer =
-            device.create_buffer_with_data(cast_slice(&atoms), wgpu::BufferUsage::VERTEX);
+        let atoms_buffer = device.create_buffer_with_data(cast_slice(&atoms), wgpu::BufferUsage::VERTEX);
 
         println!("Pipeline");
         let billboards_pipeline = SphereBillboardInstancedPipeline::new(&device);
+        let billboards_depth_pipeline = SphereBillboardInstancedDepthPipeline::new(&device);
+        let box_depth_pipeline_write = BoxDepthPipeline::new(&device, true);
+        let box_depth_pipeline_read = BoxDepthPipeline::new(&device, false);
 
         let mut billboards_bind_groups = Vec::new();
+        let mut billboards_depth_bind_groups = Vec::new();
         let mut structure_model_matrices_buffer = Vec::new();
+        let mut aabbs_matrices = Vec::new();
         for (i, structure_molecule) in structure_model_matrices.iter().enumerate() {
             let mut matrices = Vec::new();
             for m in structure_molecule {
                 matrices.extend_from_slice(m.as_slice());
+
+                let aabb_matrix = m * glm::scaling(&((molecules[i].bounding_box.max - molecules[i].bounding_box.min)));
+                aabbs_matrices.extend_from_slice(aabb_matrix.as_slice());
             }
-            structure_model_matrices_buffer.push(device.create_buffer_with_data(cast_slice(&matrices), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST));
+            structure_model_matrices_buffer
+                .push(device.create_buffer_with_data(cast_slice(&matrices), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST));
 
             billboards_bind_groups.push(device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
@@ -219,7 +206,36 @@ impl Application {
                     },
                 ],
             }));
+
+            billboards_depth_bind_groups.push(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: None,
+                layout: &billboards_depth_pipeline.bind_group_layout,
+                bindings: &[
+                    wgpu::Binding {
+                        binding: 0,
+                        resource: wgpu::BindingResource::Buffer {
+                            buffer: &camera_buffer,
+                            range: 0..std::mem::size_of::<CameraUbo>() as u64,
+                        },
+                    },
+                    wgpu::Binding {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Buffer {
+                            buffer: &structure_model_matrices_buffer.last().unwrap(),
+                            range: 0..(matrices.len() * std::mem::size_of::<f32>()) as u64,
+                        },
+                    },
+                ],
+            }));
         }
+        
+        let aabbs_len = (aabbs_matrices.len() / 16) as u64;
+        let aabbs_matrices = device.create_buffer_with_data(cast_slice(&aabbs_matrices), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST);
+        let aabbs_fragments = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: aabbs_len * std::mem::size_of::<f32>() as u64,
+            usage: wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_DST,
+        });        
 
         Self {
             width,
@@ -236,6 +252,10 @@ impl Application {
 
             billboards_pipeline,
             billboards_bind_groups,
+            billboards_depth_pipeline,
+            billboards_depth_bind_groups,
+            box_depth_pipeline_write,
+            box_depth_pipeline_read,
 
             molecule_name_id,
 
@@ -244,6 +264,10 @@ impl Application {
 
             structure_model_matrices,
             structure_model_matrices_buffer,
+
+            aabbs_len,
+            aabbs_matrices,
+            aabbs_fragments,
         }
     }
 
@@ -275,9 +299,67 @@ impl ApplicationSkeleton for Application {
                 .create_buffer_with_data(cast_slice(&[self.camera.ubo()]), wgpu::BufferUsage::COPY_SRC);
 
             encoder.copy_buffer_to_buffer(&camera_buffer, 0, &self.camera_buffer, 0, size as wgpu::BufferAddress);
+
+            let tmp_buffer = self
+                .device
+                .create_buffer_with_data(cast_slice(&vec![0.0f32; self.aabbs_len as usize]), wgpu::BufferUsage::COPY_SRC);
+            encoder.copy_buffer_to_buffer(&tmp_buffer, 0, &self.aabbs_fragments, 0, (4 * self.aabbs_len) as wgpu::BufferAddress);
         }
 
-        {
+        let box_depth_bind_group = self.box_depth_pipeline_read.create_bind_group(&self.device, &self.camera_buffer, &self.aabbs_matrices, &self.aabbs_fragments, self.aabbs_len);
+
+        // Depth pre-pass
+        if self.options.render_depth_prepass {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                    attachment: &self.depth_texture_view,
+                    depth_load_op: wgpu::LoadOp::Clear,
+                    depth_store_op: wgpu::StoreOp::Store,
+                    stencil_load_op: wgpu::LoadOp::Clear,
+                    stencil_store_op: wgpu::StoreOp::Store,
+                    clear_depth: 0.0,
+                    clear_stencil: 0,
+                }),
+            });
+
+            
+            rpass.set_pipeline(&self.billboards_depth_pipeline.pipeline);
+            rpass.set_vertex_buffer(0, &self.atoms_buffer, 0, 0);
+
+            for (molecule_index, molecule) in self.molecules_pointers.iter().enumerate() {
+                rpass.set_bind_group(0, &self.billboards_depth_bind_groups[molecule_index], &[]);
+                rpass.draw(
+                    molecule.lods_vertices[0].clone(),
+                    0..self.structure_model_matrices[molecule_index].len() as u32,
+                );
+            }
+        }
+
+        // AABB removal
+        if self.options.render_aabbs {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachmentDescriptor {
+                    attachment: &self.depth_texture_view,
+                    depth_load_op: wgpu::LoadOp::Load,
+                    depth_store_op: wgpu::StoreOp::Clear,
+                    stencil_load_op: wgpu::LoadOp::Clear,
+                    stencil_store_op: wgpu::StoreOp::Store,
+                    clear_depth: 0.0,
+                    clear_stencil: 0,
+                }),
+            });
+
+            rpass.set_pipeline(&self.box_depth_pipeline_read.pipeline);
+            rpass.set_bind_group(0, &box_depth_bind_group, &[]);
+            rpass.draw(
+                0..36,
+                0..self.aabbs_len as u32,
+            );
+        }
+
+        if self.options.render_output {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
                     attachment: &frame,
@@ -297,16 +379,19 @@ impl ApplicationSkeleton for Application {
                 }),
             });
 
-            if self.options.render_molecules {
-                rpass.set_pipeline(&self.billboards_pipeline.pipeline);
-                rpass.set_vertex_buffer(0, &self.atoms_buffer, 0, 0);
+            rpass.set_pipeline(&self.billboards_pipeline.pipeline);
+            rpass.set_vertex_buffer(0, &self.atoms_buffer, 0, 0);
 
-                for (molecule_index, molecule) in self.molecules_pointers.iter().enumerate() {
-                    rpass.set_bind_group(0, &self.billboards_bind_groups[molecule_index], &[]);   
-                    rpass.draw(molecule.lods_vertices[0].clone(), 0..self.structure_model_matrices[molecule_index].len() as u32);
-                }
+            for (molecule_index, molecule) in self.molecules_pointers.iter().enumerate() {
+                rpass.set_bind_group(0, &self.billboards_bind_groups[molecule_index], &[]);
+                rpass.draw(
+                    molecule.lods_vertices[0].clone(),
+                    0..self.structure_model_matrices[molecule_index].len() as u32,
+                );
             }
         }
+
+
         self.queue.submit(&[encoder.finish()]);
     }
 

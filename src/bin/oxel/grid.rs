@@ -350,6 +350,7 @@ impl VoxelGrid {
     }
 
     pub fn new(atoms: &mut Vec<glm::Vec4>) -> Self {
+        println!("Atoms: {}", atoms.len());
         // Find bounding box of the entire structure
         let mut bb_max = vec3(std::f32::NEG_INFINITY, std::f32::NEG_INFINITY, std::f32::NEG_INFINITY);
         let mut bb_min = vec3(std::f32::INFINITY, std::f32::INFINITY, std::f32::INFINITY);
@@ -375,7 +376,7 @@ impl VoxelGrid {
         println!("BB max: {:?}. BB min: {:?}. BB diff: {:?}", bb_max, bb_min, bb_diff);
 
         // Create voxel grid
-        let size = 1024i32;
+        let size = 256i32;
 
         let voxel_size = vec3(bb_diff.x / size as f32, bb_diff.y / size as f32, bb_diff.z / size as f32);
         let voxel_halfsize = voxel_size.apply_into(|e| e * 0.5);

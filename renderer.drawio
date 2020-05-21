@@ -1,0 +1,103 @@
+<mxfile host="localhost" modified="2020-05-20T21:54:19.012Z" agent="5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Code/1.45.1 Chrome/78.0.3904.130 Electron/7.2.4 Safari/537.36" etag="i2knvvXw8Ouc7b7p_uIc" version="13.0.9">
+    <diagram id="6hGFLwfOUW9BJ-s0fimq" name="Page-1">
+        <mxGraphModel dx="1387" dy="960" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="35" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=48;" edge="1" parent="1" source="2" target="34">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2" value="Mesh Shader&lt;br&gt;Occluder render" style="whiteSpace=wrap;html=1;aspect=fixed;labelBorderColor=none;rounded=0;strokeColor=#3399FF;" vertex="1" parent="1">
+                    <mxGeometry x="400" y="480" width="120" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="3" value="Task Shader&lt;br&gt;&lt;br&gt;&lt;b&gt;Hi-Z cull AABB of a molecule&lt;/b&gt;" style="whiteSpace=wrap;html=1;aspect=fixed;strokeColor=#3399FF;" vertex="1" parent="1">
+                    <mxGeometry x="880" y="480" width="120" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="4" value="Single pass&lt;br&gt;depth map&lt;br&gt;generation" style="whiteSpace=wrap;html=1;aspect=fixed;strokeColor=#3399FF;" vertex="1" parent="1">
+                    <mxGeometry x="720" y="480" width="120" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="5" target="17">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="5" value="Mesh Shader&lt;br&gt;&lt;br&gt;&lt;b&gt;(Optional: Cluster cull)&lt;/b&gt;" style="whiteSpace=wrap;html=1;aspect=fixed;strokeColor=#3399FF;" vertex="1" parent="1">
+                    <mxGeometry x="1040" y="480" width="120" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="9" value="" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="4" target="3">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="910" y="550" as="sourcePoint"/>
+                        <mxPoint x="960" y="500" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="31" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="10" target="2">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="510" y="410" as="targetPoint"/>
+                        <Array as="points">
+                            <mxPoint x="460" y="140"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="10" value="Select LOD" style="whiteSpace=wrap;html=1;aspect=fixed;" vertex="1" parent="1">
+                    <mxGeometry x="320" y="80" width="120" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="11" value="CPU" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;fontSize=48;" vertex="1" parent="1">
+                    <mxGeometry x="30" y="110" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="32" value="GPU" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;fontSize=48;" vertex="1" parent="1">
+                    <mxGeometry x="160" y="510" width="120" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="13" value="" style="endArrow=classic;html=1;fontSize=22;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="1" source="3" target="5">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="800" y="440" as="sourcePoint"/>
+                        <mxPoint x="850" y="390" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="14" value="" style="endArrow=classic;html=1;fontSize=22;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" edge="1" parent="1" source="5">
+                    <mxGeometry width="50" height="50" relative="1" as="geometry">
+                        <mxPoint x="860" y="520" as="sourcePoint"/>
+                        <mxPoint x="1100" y="440" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="23" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="16" target="20">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1420" y="380" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="16" value="G-Buffer #2&lt;br&gt;AtomicInterlock" style="whiteSpace=wrap;html=1;aspect=fixed;fontSize=12;strokeColor=#66FF66;" vertex="1" parent="1">
+                    <mxGeometry x="1040" y="320" width="120" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="24" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="17" target="20">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="17" value="G-Buffer&lt;br&gt;Raster" style="whiteSpace=wrap;html=1;aspect=fixed;fontSize=12;strokeColor=#66FF66;" vertex="1" parent="1">
+                    <mxGeometry x="1200" y="480" width="120" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="27" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="20" target="26">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="20" value="Merge G-Buffers" style="whiteSpace=wrap;html=1;aspect=fixed;fontSize=12;strokeColor=#3399FF;" vertex="1" parent="1">
+                    <mxGeometry x="1360" y="480" width="120" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="28" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;" edge="1" parent="1" source="26">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="1690" y="540" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="26" value="Recompute&lt;br&gt;world positions&lt;br&gt;+&lt;br&gt;normals" style="whiteSpace=wrap;html=1;aspect=fixed;fontSize=12;strokeColor=#3399FF;" vertex="1" parent="1">
+                    <mxGeometry x="1520" y="480" width="120" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="30" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;" edge="1" parent="1" source="29" target="10">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="29" value="Frustrum cull" style="whiteSpace=wrap;html=1;aspect=fixed;fontSize=12;" vertex="1" parent="1">
+                    <mxGeometry x="160" y="80" width="120" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="36" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=48;" edge="1" parent="1" source="34" target="4">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="34" value="&lt;font style=&quot;font-size: 12px&quot;&gt;Depth map&lt;/font&gt;" style="whiteSpace=wrap;html=1;aspect=fixed;rounded=0;strokeColor=#66FF66;fontSize=12;" vertex="1" parent="1">
+                    <mxGeometry x="560" y="480" width="120" height="120" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

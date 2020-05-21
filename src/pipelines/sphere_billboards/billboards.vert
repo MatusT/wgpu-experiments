@@ -23,15 +23,15 @@ const vec2 vertices[3] = {
 
 void main(void) {
   const vec4 world_position = positions[gl_VertexIndex / 3];
-  const vec2 vertex = world_position.w * vertices[gl_VertexIndex % 3];
-  scale = 1.0; //world_position.w;
+  scale = world_position.w;
+  const vec2 vertex = scale * vertices[gl_VertexIndex % 3];  
 
   const vec3 CameraRight_worldspace = vec3(view[0][0], view[1][0], view[2][0]);
   const vec3 CameraUp_worldspace = vec3(view[0][1], view[1][1], view[2][1]);
   const vec4 position_worldspace = vec4(
       world_position.xyz +
-      scale * vertex.x * CameraRight_worldspace +
-      scale * vertex.y * CameraUp_worldspace, 1.0);
+      vertex.x * CameraRight_worldspace +
+      vertex.y * CameraUp_worldspace, 1.0);
 
   uv = vertex;
   position_clip_space = projection_view * position_worldspace;    

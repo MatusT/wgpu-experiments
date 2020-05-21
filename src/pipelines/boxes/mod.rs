@@ -1,4 +1,5 @@
 use crate::{load_glsl, ShaderStage};
+use crate::camera::*;
 use wgpu;
 #[derive(Copy, Clone)]
 pub enum BoxRendering {
@@ -123,6 +124,134 @@ impl BoxPipeline {
             pipeline,
             bind_group_layout,
         }
+    }
+}
+pub struct BoxDepthPipeline {
+    pub pipeline: wgpu::RenderPipeline,
+    pub bind_group_layout: wgpu::BindGroupLayout,
+}
+
+impl BoxDepthPipeline {
+    pub fn new(device: &wgpu::Device, depth_write_enabled: bool) -> Self {
+        // Shaders
+        let vs_bytes = load_glsl(include_str!("box_depth.vert"), ShaderStage::Vertex);
+        let vs_module = device.create_shader_module(&vs_bytes);
+        let fs_bytes = load_glsl(include_str!("box_depth.frag"), ShaderStage::Fragment);
+        let fs_module = device.create_shader_module(&fs_bytes);
+
+        // Bind Groups
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Box bind group layout"),
+            bindings: &[
+                // Camera
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::UniformBuffer { dynamic: false },
+                },
+                // Model Matrices
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStage::VERTEX,
+                    ty: wgpu::BindingType::StorageBuffer {
+                        dynamic: false,
+                        readonly: true,
+                    },
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStage::FRAGMENT,
+                    ty: wgpu::BindingType::StorageBuffer {
+                        dynamic: false,
+                        readonly: false,
+                    },
+                },
+            ],
+        });
+
+        // Pipeline
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            bind_group_layouts: &[&bind_group_layout],
+        });
+
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            layout: &pipeline_layout,
+            vertex_stage: wgpu::ProgrammableStageDescriptor {
+                module: &vs_module,
+                entry_point: "main",
+            },
+            fragment_stage: Some(wgpu::ProgrammableStageDescriptor {
+                module: &fs_module,
+                entry_point: "main",
+            }),
+            rasterization_state: Some(wgpu::RasterizationStateDescriptor {
+                front_face: wgpu::FrontFace::Cw,
+                cull_mode: wgpu::CullMode::None,
+                depth_bias: 0,
+                depth_bias_slope_scale: 0.0,
+                depth_bias_clamp: 0.0,
+            }),
+            primitive_topology: wgpu::PrimitiveTopology::TriangleList,
+            color_states: &[],
+            depth_stencil_state: Some(wgpu::DepthStencilStateDescriptor {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled,
+                depth_compare: wgpu::CompareFunction::Greater,
+                stencil_front: wgpu::StencilStateFaceDescriptor::IGNORE,
+                stencil_back: wgpu::StencilStateFaceDescriptor::IGNORE,
+                stencil_read_mask: 0,
+                stencil_write_mask: 0,
+            }),
+            vertex_state: wgpu::VertexStateDescriptor {
+                index_format: wgpu::IndexFormat::Uint16,
+                vertex_buffers: &[],
+            },
+            sample_count: 1,
+            sample_mask: !0,
+            alpha_to_coverage_enabled: false,
+        });
+
+        Self {
+            pipeline,
+            bind_group_layout,
+        }
+    }
+
+    pub fn create_bind_group(
+        &self,
+        device: &wgpu::Device,
+        camera: &wgpu::Buffer,
+        model_matrices: &wgpu::Buffer,
+        fragments: &wgpu::Buffer,
+        length: u64,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &self.bind_group_layout,
+            bindings: &[
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: camera,
+                        range: 0..std::mem::size_of::<CameraUbo>() as u64,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: model_matrices,
+                        range: 0..64 * length,
+                    },
+                },
+                wgpu::Binding {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: fragments,
+                        range: 0..4 * length,
+                    },
+                },
+            ],
+        })
     }
 }
 

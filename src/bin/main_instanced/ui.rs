@@ -6,9 +6,9 @@ use iced_winit::{Checkbox, Column, Container, Element, Length, Space, Text};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Message {
-    MoleculesCheckboxToggled(bool),
-    GridCheckboxToggled(bool),
+    DepthPrepassCheckboxToggled(bool),
     AabbsCheckboxToggled(bool),
+    OutputCheckboxToggled(bool),
 }
 
 pub struct UserInterface {}
@@ -20,14 +20,14 @@ impl UserInterface {
 
     pub fn update(&self, message: Message, application: &mut Application) {
         match message {
-            Message::MoleculesCheckboxToggled(b) => {
-                application.options.render_molecules = b;
-            }
-            Message::GridCheckboxToggled(b) => {
-                application.options.render_grid = b;
+            Message::DepthPrepassCheckboxToggled(b) => {
+                application.options.render_depth_prepass = b;
             }
             Message::AabbsCheckboxToggled(b) => {
                 application.options.render_aabbs = b;
+            }
+            Message::OutputCheckboxToggled(b) => {
+                application.options.render_output = b;
             }
         }
     }
@@ -38,14 +38,14 @@ impl UserInterface {
                 .push(Text::new("Options"))
                 .push(Space::with_height(Length::Units(4)))
                 .push(Checkbox::new(
-                    options.render_molecules,
-                    "Render molecules",
-                    Message::MoleculesCheckboxToggled,
+                    options.render_depth_prepass,
+                    "Depth prepass",
+                    Message::DepthPrepassCheckboxToggled,
                 ))
                 .push(Space::with_height(Length::Units(4)))
-                .push(Checkbox::new(options.render_grid, "Render grid", Message::GridCheckboxToggled))
+                .push(Checkbox::new(options.render_aabbs, "AABBs", Message::AabbsCheckboxToggled))
                 .push(Space::with_height(Length::Units(4)))
-                .push(Checkbox::new(options.render_aabbs, "Render AABBs", Message::AabbsCheckboxToggled))
+                .push(Checkbox::new(options.render_output, "Output", Message::OutputCheckboxToggled))
                 .push(Space::with_height(Length::Units(4)))
                 .padding(12),
         )

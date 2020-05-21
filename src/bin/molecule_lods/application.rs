@@ -95,7 +95,6 @@ impl Application {
             sum += lod.atoms().len() as u32;
         }
 
-        println!("{:?}", lods);
         camera.set_distance(distance(&molecule.bounding_box.min, &molecule.bounding_box.max));
         camera.set_speed(distance(&molecule.bounding_box.min, &molecule.bounding_box.max));
 

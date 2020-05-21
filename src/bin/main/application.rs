@@ -1,6 +1,6 @@
 use bytemuck::*;
-use glm::Mat4;
 use glm::vec3_to_vec4;
+use glm::Mat4;
 use lib3dmol::structures::{atom::AtomType, GetAtom};
 use nalgebra_glm as glm;
 use std::collections::HashMap;
@@ -82,7 +82,6 @@ pub struct Application {
 
     merged_buffer: wgpu::Buffer,
     merged_buffer_len: u32,
-
     // Instancing of structures
     // structures_buffer: wgpu::Buffer,
 }
@@ -147,7 +146,7 @@ impl Application {
         let mut molecule_name_id: HashMap<String, usize> = HashMap::new();
         let mut molecules = Vec::new();
         let mut molecules_pointers = Vec::new();
-        let mut structure_model_matrices = Vec::new();        
+        let mut structure_model_matrices = Vec::new();
 
         let mut atoms = Vec::new();
         let mut atoms_sum = 0u32;
@@ -189,14 +188,14 @@ impl Application {
         let atoms_buffer =
             device.create_buffer_with_data(cast_slice(&atoms), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST);
 
-
         let mut structure_model_matrices_buffer = Vec::new();
         for (i, structure_molecule) in structure_model_matrices.iter().enumerate() {
             let mut matrices = Vec::new();
             for m in structure_molecule {
                 matrices.extend_from_slice(m.as_slice());
             }
-            structure_model_matrices_buffer[i] = device.create_buffer_with_data(cast_slice(&matrices), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST);
+            structure_model_matrices_buffer[i] =
+                device.create_buffer_with_data(cast_slice(&matrices), wgpu::BufferUsage::STORAGE_READ | wgpu::BufferUsage::COPY_DST);
         }
 
         // Build merged buffer

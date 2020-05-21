@@ -14,9 +14,9 @@ layout(set = 0, binding = 1, std430) buffer ModelMatrices {
 };
 
 const vec2 vertices[3] = {
-    vec2(-0.86, -0.5),
-    vec2(0.86, -0.5),
-    vec2(0.0, 1.5),
+    vec2(-0.43, -0.25),
+    vec2(0.43, -0.25),
+    vec2(0.0, 0.75),
 };
 
 void main(void) {
@@ -31,6 +31,6 @@ void main(void) {
       world_position.xyz +
       vertex.x * CameraRight_worldspace +
       vertex.y * CameraUp_worldspace, 1.0);
-
+  
   gl_Position = projection_view * position_worldspace;
 }

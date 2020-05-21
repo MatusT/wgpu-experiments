@@ -27,8 +27,7 @@ void main(void) {
   const vec4 world_position = model_matrices[gl_InstanceIndex] * vec4(position.xyz, 1.0);
   scale = position.w;
 
-  const vec2 vertex = scale * vertices[gl_VertexIndex % 3];  
-
+  const vec2 vertex = scale * vertices[gl_VertexIndex % 3];
   const vec3 CameraRight_worldspace = vec3(view[0][0], view[1][0], view[2][0]);
   const vec3 CameraUp_worldspace = vec3(view[0][1], view[1][1], view[2][1]);
   const vec4 position_worldspace = vec4(

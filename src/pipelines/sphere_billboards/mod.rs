@@ -161,19 +161,15 @@ impl SphereBillboardInstancedPipeline {
             }),
             vertex_state: wgpu::VertexStateDescriptor {
                 index_format: wgpu::IndexFormat::Uint16,
-                vertex_buffers: &[
-                    wgpu::VertexBufferDescriptor {
-                        stride: 4 * std::mem::size_of::<f32>() as u64,
-                        step_mode: wgpu::InputStepMode::Vertex,
-                        attributes: &[
-                            wgpu::VertexAttributeDescriptor {
-                                offset: 0,
-                                format: wgpu::VertexFormat::Float4,
-                                shader_location: 0,
-                            }
-                        ]
-                    }
-                ],
+                vertex_buffers: &[wgpu::VertexBufferDescriptor {
+                    stride: 4 * std::mem::size_of::<f32>() as u64,
+                    step_mode: wgpu::InputStepMode::Vertex,
+                    attributes: &[wgpu::VertexAttributeDescriptor {
+                        offset: 0,
+                        format: wgpu::VertexFormat::Float4,
+                        shader_location: 0,
+                    }],
+                }],
             },
             sample_count: 1,
             sample_mask: !0,
@@ -255,19 +251,15 @@ impl SphereBillboardInstancedDepthPipeline {
             }),
             vertex_state: wgpu::VertexStateDescriptor {
                 index_format: wgpu::IndexFormat::Uint16,
-                vertex_buffers: &[
-                    wgpu::VertexBufferDescriptor {
-                        stride: 4 * std::mem::size_of::<f32>() as u64,
-                        step_mode: wgpu::InputStepMode::Vertex,
-                        attributes: &[
-                            wgpu::VertexAttributeDescriptor {
-                                offset: 0,
-                                format: wgpu::VertexFormat::Float4,
-                                shader_location: 0,
-                            }
-                        ]
-                    }
-                ],
+                vertex_buffers: &[wgpu::VertexBufferDescriptor {
+                    stride: 4 * std::mem::size_of::<f32>() as u64,
+                    step_mode: wgpu::InputStepMode::Vertex,
+                    attributes: &[wgpu::VertexAttributeDescriptor {
+                        offset: 0,
+                        format: wgpu::VertexFormat::Float4,
+                        shader_location: 0,
+                    }],
+                }],
             },
             sample_count: 1,
             sample_mask: !0,
