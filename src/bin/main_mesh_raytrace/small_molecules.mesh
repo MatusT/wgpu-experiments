@@ -1,0 +1,130 @@
+#version 460
+
+#extension GL_NV_mesh_shader: require
+
+#define MOLECULES_COUNT (32)
+#define PRIMITIVES_COUNT (MOLECULES_COUNT * 2)
+#define VERTICES_COUNT (PRIMITIVES_COUNT * 3)
+
+layout(local_size_x = 32) in;
+layout(triangles, max_vertices = VERTICES_COUNT, max_primitives = PRIMITIVES_COUNT) out;
+
+layout(set = 0, binding = 0, std140) uniform CameraMatrices {
+    mat4 projection;
+    mat4 view;
+	mat4 projection_view;
+	vec4 camera_position;
+} camera;
+
+layout (set = 0, binding = 1, std140) uniform MoleculeBuffer {
+	vec4 positions[64];
+	vec4 aabb_scale;
+	uint count;
+} molecule;
+
+layout (set = 0, binding = 2, std430) readonly buffer ModelMatricesBuffer {
+	mat4 model_matrices[];
+};
+
+out gl_MeshPerVertexNV {
+     vec4  gl_Position;
+     float gl_PointSize;
+     float gl_ClipDistance[];
+     float gl_CullDistance[];
+} gl_MeshVerticesNV[];
+
+const vec2 square_vertices[4] = {
+    vec2(0.5, -0.5),
+    vec2(0.5, 0.5),
+    vec2(-0.5, 0.5),
+    vec2(-0.5, -0.5),
+};
+
+const vec3 box_vertices[8] = {
+    vec3(-0.5, -0.5,  0.5),
+    vec3( 0.5, -0.5,  0.5),
+    vec3( 0.5,  0.5,  0.5),
+    vec3(-0.5,  0.5,  0.5),
+    vec3(-0.5, -0.5, -0.5),
+    vec3( 0.5, -0.5, -0.5),
+    vec3( 0.5,  0.5, -0.5),
+    vec3(-0.5,  0.5, -0.5)
+};
+
+layout(location = 0) out vec3 view_position[];
+layout(location = 1) out perprimitiveNV vec3 positions[];
+
+// Fast Quadric Proj: "GPU-Based Ray-Casting of Quadratic Surfaces" http://dl.acm.org/citation.cfm?id=2386396
+/*
+void quadricProj(vec3 osPosition, float voxelSize, mat4 objectToScreenMatrix, vec2 halfScreenSize,
+	inout vec4 position, inout float pointSize) {
+	const vec4 quadricMat = vec4(1.0, 1.0, 1.0, -1.0);
+	float sphereRadius = voxelSize * 1.732051;
+	vec4 sphereCenter = vec4(osPosition.xyz, 1.0);
+	mat4 modelViewProj = transpose(objectToScreenMatrix);
+	mat3x4 matT = mat3x4( mat3(modelViewProj[0].xyz, modelViewProj[1].xyz, modelViewProj[3].xyz) * sphereRadius);
+	matT[0].w = dot(sphereCenter, modelViewProj[0]);
+	matT[1].w = dot(sphereCenter, modelViewProj[1]);
+	matT[2].w = dot(sphereCenter, modelViewProj[3]);
+	mat3x4 matD = mat3x4(matT[0] * quadricMat, matT[1] * quadricMat, matT[2] * quadricMat);
+	vec4 eqCoefs =
+	vec4(dot(matD[0], matT[2]), dot(matD[1], matT[2]), dot(matD[0], matT[0]), dot(matD[1], matT[1]))
+	/ dot(matD[2], matT[2]);
+	vec4 outPosition = vec4(eqCoefs.x, eqCoefs.y, 0.0, 1.0);
+	vec2 AABB = sqrt(eqCoefs.xy*eqCoefs.xy - eqCoefs.zw);
+	AABB *= halfScreenSize * 2.0f;
+	position.xy = outPosition.xy * position.w;
+	pointSize = max(AABB.x, AABB.y);
+	}
+*/
+
+void main()
+{
+	const uint offset = MOLECULES_COUNT * gl_WorkGroupID.x;
+	const uint index = offset + gl_LocalInvocationID.x;
+
+	// All 32 threads read their AABBs at once
+	const mat4 model_matrix = model_matrices[index];
+	const mat4 view_model_matrix = camera.view * model_matrix;
+	
+	// Calculate screen-space bounding box
+	vec3 aabb_ps_min = vec3(2.0);
+	vec3 aabb_ps_max = vec3(-2.0);
+	vec3 aabb_ws_min = vec3(10000.0);
+	vec3 aabb_ws_max = vec3(-10000.0);
+	for(uint i = 0; i < 8; i++) {
+		vec4 view = view_model_matrix * vec4(molecule.aabb_scale.xyz * box_vertices[i], 1.0);
+		vec4 projected = camera.projection * view;
+		projected = projected / projected.w;
+
+		aabb_ps_min = min(aabb_ps_min, projected.xyz);
+		aabb_ws_min = min(aabb_ws_min, view.xyz);
+		aabb_ps_max = max(aabb_ps_max, projected.xyz);
+		aabb_ws_max = max(aabb_ws_max, view.xyz);
+	}
+
+	for(uint i = 0; i < molecule.count; i++) {
+		positions[i] = vec3(view_model_matrix * molecule.positions[i]);
+	}
+
+	// Expand it into 2 triangles
+	// Positions
+	gl_MeshVerticesNV[gl_LocalInvocationID.x * 4 + 0].gl_Position = vec4(aabb_ps_min.x, aabb_ps_max.y, aabb_ps_max.z, 1.0);
+	gl_MeshVerticesNV[gl_LocalInvocationID.x * 4 + 1].gl_Position = vec4(aabb_ps_max.x, aabb_ps_max.y, aabb_ps_max.z, 1.0);
+	gl_MeshVerticesNV[gl_LocalInvocationID.x * 4 + 2].gl_Position = vec4(aabb_ps_min.x, aabb_ps_min.y, aabb_ps_max.z, 1.0);
+	gl_MeshVerticesNV[gl_LocalInvocationID.x * 4 + 3].gl_Position = vec4(aabb_ps_max.x, aabb_ps_min.y, aabb_ps_max.z, 1.0);
+	// TODO: add world positions
+	view_position[gl_LocalInvocationID.x * 4 + 0] = vec3(aabb_ws_min.x, aabb_ws_max.y, aabb_ws_max.z);
+	view_position[gl_LocalInvocationID.x * 4 + 1] = vec3(aabb_ws_max.x, aabb_ws_max.y, aabb_ws_max.z);
+	view_position[gl_LocalInvocationID.x * 4 + 2] = vec3(aabb_ws_min.x, aabb_ws_min.y, aabb_ws_max.z);
+	view_position[gl_LocalInvocationID.x * 4 + 3] = vec3(aabb_ws_max.x, aabb_ws_min.y, aabb_ws_max.z);
+
+	gl_PrimitiveIndicesNV[gl_LocalInvocationID.x * 6 + 0] = 0;
+	gl_PrimitiveIndicesNV[gl_LocalInvocationID.x * 6 + 1] = 1;
+	gl_PrimitiveIndicesNV[gl_LocalInvocationID.x * 6 + 2] = 2;
+	gl_PrimitiveIndicesNV[gl_LocalInvocationID.x * 6 + 3] = 1;
+	gl_PrimitiveIndicesNV[gl_LocalInvocationID.x * 6 + 4] = 2;
+	gl_PrimitiveIndicesNV[gl_LocalInvocationID.x * 6 + 5] = 3;
+
+	gl_PrimitiveCountNV = VERTICES_COUNT;
+}

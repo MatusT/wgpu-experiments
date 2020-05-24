@@ -1,5 +1,5 @@
 mod application;
-mod grid;
+mod small_molecules_pipeline;
 
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
 
@@ -10,6 +10,8 @@ fn main() {
         event_loop::{ControlFlow, EventLoop},
     };
 
+    let instance = wgpu::Instance::new();
+
     // Initialize winit
     let event_loop = EventLoop::new();
 
@@ -18,12 +20,12 @@ fn main() {
         window.set_inner_size(winit::dpi::LogicalSize { width: 1920, height: 1080 });
         window.set_title("AABB Finding");
         let size = window.inner_size();
-        let surface = wgpu::Surface::create(&window);
+        let surface = unsafe { instance.create_surface(&window) };
         (window, size, surface)
     };
 
     // Initialize the graphics scene
-    let mut application = futures::executor::block_on(application::Application::new(size.width, size.height, &surface));
+    let mut application = futures::executor::block_on(application::Application::new(size.width, size.height, &instance, &surface));
 
     // Initialize swapchain
     let mut sc_desc = wgpu::SwapChainDescriptor {

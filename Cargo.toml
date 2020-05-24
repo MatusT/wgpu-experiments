@@ -7,32 +7,31 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-wgpu = "0.5"
+wgpu = { version = "0.5", path = "../WebGPU-Firefox-Stack/wgpu-rs" }
 winit = "0.22"
 glsl-to-spirv = "0.1"
 rand = "0.7"
 rayon = "1.3"
 nalgebra-glm = { version = "0.7.0", features = ["serde-serialize"] }
-obj-rs = "0.6.0"
+obj-rs = "0.6"
 bytemuck = { version = "1.2", features = ["extern_crate_alloc"] }
 lib3dmol = "0.3.2"
 crossbeam-utils = "0.7"
 image = "0.23"
 futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
-ron = "0.5.1"
-
-iced = { git ="https://github.com/hecrj/iced" }
-iced_wgpu = { git = "https://github.com/hecrj/iced" }
-iced_winit = { git = "https://github.com/hecrj/iced" }
-iced_native = { git = "https://github.com/hecrj/iced" }
-iced_style = { git = "https://github.com/hecrj/iced" }
-
+ron = "0.6"
 lyon = { version = "0.15", features = ["svg", "extra"] }
 
-[dev-dependencies]
-criterion = "0.3"
+[patch."https://github.com/gfx-rs/wgpu"]
+wgpu-types = { version = "0.5", path = "../WebGPU-Firefox-Stack/wgpu/wgpu-types" }
+wgpu-core = { version = "0.5", path = "../WebGPU-Firefox-Stack/wgpu/wgpu-core" }
 
-[[bench]]
-name = "sort"
-harness = false
+[patch.crates-io]
+gfx-hal = { version = "0.5", path = "../WebGPU-Firefox-Stack/gfx/src/hal" }
+gfx-backend-empty = { version = "0.5", path = "../WebGPU-Firefox-Stack/gfx/src/backend/empty" }
+gfx-backend-vulkan = { version = "0.5", path = "../WebGPU-Firefox-Stack/gfx/src/backend/vulkan" }
+gfx-backend-dx12 = { version = "0.5", path = "../WebGPU-Firefox-Stack/gfx/src/backend/dx12" }
+gfx-backend-dx11 = { version = "0.5", path = "../WebGPU-Firefox-Stack/gfx/src/backend/dx11" }
+gfx-descriptor = { version = "0.1", path = "../WebGPU-Firefox-Stack/gfx-extras/gfx-descriptor" }
+gfx-memory = { version = "0.1", path = "../WebGPU-Firefox-Stack/gfx-extras/gfx-memory" }

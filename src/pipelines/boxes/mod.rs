@@ -1,5 +1,5 @@
-use crate::{load_glsl, ShaderStage};
 use crate::camera::*;
+use crate::{load_glsl, ShaderStage};
 use wgpu;
 #[derive(Copy, Clone)]
 pub enum BoxRendering {
@@ -223,7 +223,6 @@ impl BoxDepthPipeline {
         camera: &wgpu::Buffer,
         model_matrices: &wgpu::Buffer,
         fragments: &wgpu::Buffer,
-        length: u64,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
@@ -231,24 +230,15 @@ impl BoxDepthPipeline {
             bindings: &[
                 wgpu::Binding {
                     binding: 0,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: camera,
-                        range: 0..std::mem::size_of::<CameraUbo>() as u64,
-                    },
+                    resource: wgpu::BindingResource::Buffer(camera.slice(0..0)),
                 },
                 wgpu::Binding {
                     binding: 1,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: model_matrices,
-                        range: 0..64 * length,
-                    },
+                    resource: wgpu::BindingResource::Buffer(model_matrices.slice(0..0)),
                 },
                 wgpu::Binding {
                     binding: 2,
-                    resource: wgpu::BindingResource::Buffer {
-                        buffer: fragments,
-                        range: 0..4 * length,
-                    },
+                    resource: wgpu::BindingResource::Buffer(fragments.slice(0..0)),
                 },
             ],
         })

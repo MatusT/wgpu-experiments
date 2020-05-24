@@ -40,13 +40,7 @@ fn main() {
     };
 
     // Convert the molecule to a new RON format
-    let pretty = PrettyConfig {
-        depth_limit: 8,
-        new_line: "\n".to_string(),
-        indentor: " ".to_string(),
-        separate_tuple_members: true,
-        enumerate_arrays: false,
-    };
+    let pretty = PrettyConfig::default();
     let s = to_string_pretty(&molecule, pretty).expect("Serialization failed");
 
     let out_file_path = if args.len() >= 3 {

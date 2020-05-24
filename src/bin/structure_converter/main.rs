@@ -50,13 +50,7 @@ fn main() {
     };
 
     // Convert the molecule to a new RON format
-    let pretty = PrettyConfig {
-        depth_limit: 8,
-        new_line: "\n".to_string(),
-        indentor: " ".to_string(),
-        separate_tuple_members: true,
-        enumerate_arrays: false,
-    };
+    let pretty = PrettyConfig::default();
     let s = to_string(&structure).expect("Serialization failed");
     std::fs::write(out_file_path, s).expect("Unable to write file");
 }
