@@ -1,0 +1,135 @@
+#version 460
+
+#extension GL_NV_mesh_shader : require
+
+#define ATOMS_COUNT_MAX (64)
+#define PRIMITIVES_COUNT (ATOMS_COUNT_MAX)
+#define VERTICES_COUNT (PRIMITIVES_COUNT * 3)
+
+layout(local_size_x = 32) in;
+layout(triangles, max_vertices = VERTICES_COUNT,
+       max_primitives = PRIMITIVES_COUNT) out;
+
+layout(set = 0, binding = 0, std140) uniform CameraMatrices {
+  mat4 projection;
+  mat4 view;
+  mat4 projection_view;
+  vec4 camera_position;
+}
+camera;
+
+layout(set = 0, binding = 1, std140) uniform Globals {
+  vec2 resolution;
+}
+globals;
+
+layout(set = 0, binding = 2, std140) uniform MoleculeBuffer {
+  vec4 positions[64];
+  vec4 aabb_scale;
+  uint count;
+}
+molecule;
+
+layout(set = 0, binding = 3, std430) readonly buffer ModelMatricesBuffer {
+  mat4 model_matrices[];
+};
+
+layout(set = 0, binding = 4, std430) buffer DepthBuffer {
+  uint depth[];
+};
+
+out gl_MeshPerVertexNV {
+  vec4 gl_Position;
+  float gl_PointSize;
+  float gl_ClipDistance[];
+  float gl_CullDistance[];
+}
+gl_MeshVerticesNV[];
+
+const vec2 triangle_vertices[3] = {
+    vec2(-0.86, -0.5),
+    vec2(0.86, -0.5),
+    vec2(0.0, 1.5),
+};
+
+const vec2 square_vertices[4] = {
+    vec2(0.5, -0.5),
+    vec2(0.5, 0.5),
+    vec2(-0.5, 0.5),
+    vec2(-0.5, -0.5),
+};
+
+const vec3 box_vertices[8] = {vec3(-0.5, -0.5, 0.5),  vec3(0.5, -0.5, 0.5),
+                              vec3(0.5, 0.5, 0.5),    vec3(-0.5, 0.5, 0.5),
+                              vec3(-0.5, -0.5, -0.5), vec3(0.5, -0.5, -0.5),
+                              vec3(0.5, 0.5, -0.5),   vec3(-0.5, 0.5, -0.5)};
+
+// layout(location = 0) out vec3 view_position[];
+// layout(location = 1) out perprimitiveNV vec3 positions[];
+/*
+  const vec4 world_position = model_matrices[gl_InstanceIndex] *
+  vec4(position.xyz, 1.0); scale = position.w;
+
+  const vec2 vertex = scale * vertices[gl_VertexIndex % 3];
+
+  const vec4 position_worldspace = vec4(
+      world_position.xyz +
+      vertex.x * CameraRight_worldspace +
+      vertex.y * CameraUp_worldspace, 1.0);
+
+  uv = vertex;
+  position_clip_space = projection_view * position_worldspace;
+  gl_Position = position_clip_space;
+*/
+void main() {
+  const vec3 CameraRight_worldspace =
+      vec3(camera.view[0][0], camera.view[1][0], camera.view[2][0]);
+  const vec3 CameraUp_worldspace =
+      vec3(camera.view[0][1], camera.view[1][1], camera.view[2][1]);
+
+  const uint atom_count = molecule.count;
+  const mat4 model_matrix = model_matrices[gl_WorkGroupID.x];
+
+  for (uint atom_index = gl_LocalInvocationID.x; atom_index < atom_count;
+       atom_index += 32) {
+    const vec4 atom_position_ls = molecule.positions[atom_index];
+    const vec4 atom_position_ws =
+        model_matrix * vec4(atom_position_ls.xyz, 1.0);
+
+    for (uint vertex_index = 0; vertex_index < 3; vertex_index++) {
+      const vec2 vertex = atom_position_ls.w *
+      triangle_vertices[vertex_index]; const vec4 position_worldspace =
+          vec4(atom_position_ws.xyz + vertex.x * CameraRight_worldspace +
+                   vertex.y * CameraUp_worldspace,
+               1.0);
+      gl_MeshVerticesNV[atom_index * 3 + vertex_index].gl_Position =
+          camera.projection_view * position_worldspace;
+    }
+
+    const vec4 atom_position_clip = camera.projection_view * atom_position_ws;
+    const vec4 atom_position_ndc = atom_position_clip / atom_position_clip.w;
+
+    // if (atom_position_ndc.w <= 0.0 || atom_position_ndc.x < -1.0 ||
+    //     atom_position_ndc.x > 1.0 || atom_position_ndc.y < -1.0 ||
+    //     atom_position_ndc.y > 1.0) {
+    //   continue;
+    // }
+    const ivec2 atom_position_ss = ivec2(globals.resolution * (atom_position_ndc.xy * 0.5 + 0.5));
+
+    const int pixel_id = atom_position_ss.x + atom_position_ss.y * int(globals.resolution.x);
+    // atomicMax(depth[0], uint(1)); // uint(atom_position_ndc.z * 100.0)
+  }
+  depth[gl_WorkGroupID.x * 32 + gl_LocalInvocationID.x] = 1;
+
+  for (uint i = gl_LocalInvocationID.x; i * 4 < VERTICES_COUNT; i += 32)
+  {
+    uint n = (i * 4);
+    n |= (i * 4 + 1) << 8;
+    n |= (i * 4 + 2) << 16;
+    n |= (i * 4 + 3) << 24;
+    writePackedPrimitiveIndices4x8NV(i * 4, n);
+  }
+
+  gl_PrimitiveCountNV = atom_count;
+  // gl_PrimitiveCountNV = 0;
+}

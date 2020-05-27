@@ -20,6 +20,17 @@ layout(location = 1) in perprimitiveNV vec3 positions[64];
 
 layout(location = 0) out vec4 color;
 
+// bool sphIntersect( vec3 ro, vec3 rd,  vec4 sph )
+// {
+// 	vec3 oc = -sph.xyz;
+// 	float b = dot( oc, rd );
+// 	float c = dot( oc, oc ) - sph.w;
+// 	float h = b*b - c;
+// 	if( h < 0.0 ) return false;
+// 	return true;
+// }
+
+
 bool raySphereIntersect(vec3 rd, vec3 s0, float sr) {
     // - r0: ray origin
     // - rd: normalized ray direction
@@ -28,14 +39,12 @@ bool raySphereIntersect(vec3 rd, vec3 s0, float sr) {
     // - Returns distance from r0 to first intersecion with sphere,
     //   or -1.0 if no intersection.
     float a = dot(rd, rd);
-    vec3 s0_r0 = -s0;
-    float b = 2.0 * dot(rd, s0_r0);
-    float c = dot(s0_r0, s0_r0) - (sr * sr);
+    float b = dot(rd, -s0);
+    float c = dot(-s0, -s0) - (sr * sr);
 
-    if (b*b - 4.0*a*c < 0.0) {
+    if (b*b - c < 0.0) {
         return false;
     }
-
     return true;
 }
 
@@ -50,7 +59,7 @@ bool raySphereIntersect(vec3 rd, vec3 s0, float sr) {
 void main(void)
 {
 	bool d = true;
-	for(uint i = 0; i < 4; i++) {
+	for(uint i = 0; i < 8; i++) {
 		if (raySphereIntersect(normalize(view_position), positions[i].xyz, 0.5)) {
 			d = false;
 			break;

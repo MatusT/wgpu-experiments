@@ -103,7 +103,7 @@ void main()
 		aabb_ws_max = max(aabb_ws_max, view.xyz);
 	}
 
-	for(uint i = 0; i < molecule.count; i++) {
+	for(uint i = 0; i < 8; i++) {
 		positions[i] = vec3(view_model_matrix * molecule.positions[i]);
 	}
 

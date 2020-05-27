@@ -64,9 +64,9 @@ pub struct Application {
 impl Application {
     pub async fn new(width: u32, height: u32, instance: &wgpu::Instance, surface: &wgpu::Surface) -> Self {
         let options = ApplicationOptions {
-            render_depth_prepass: true,
+            render_depth_prepass: false,
             render_aabbs: false,
-            render_output: false,
+            render_output: true,
         };
 
         let adapter = instance
@@ -384,10 +384,14 @@ impl ApplicationSkeleton for Application {
 
             for (molecule_index, molecule) in self.molecules_pointers.iter().enumerate() {
                 rpass.set_bind_group(0, &self.billboards_bind_groups[molecule_index], &[]);
-                rpass.draw(
-                    molecule.lods_vertices[0].clone(),
-                    0..self.structure_model_matrices[molecule_index].len() as u32,
-                );
+                // println!("{:?}",molecule.lods_vertices[0].end - molecule.lods_vertices[0].start);
+                if molecule.lods_vertices[0].end - molecule.lods_vertices[0].start == 156 {
+                    // println!("yes");
+                    rpass.draw(
+                        molecule.lods_vertices[0].clone(),
+                        0..self.structure_model_matrices[molecule_index].len() as u32,
+                    );
+                }
             }
         }
 

@@ -1,0 +1,26 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout (set = 0, binding = 0, std430) buffer DepthInput {
+	uint depth_input[];
+};
+
+layout (set = 0, binding = 1, r32f) uniform image2D depth_output;
+
+void main() {
+	uvec2 id = gl_LocalInvocationID.xy;
+	id.x += gl_WorkGroupSize.x * gl_WorkGroupID.x;
+	id.y += gl_WorkGroupSize.y * gl_WorkGroupID.y;
+
+	const ivec2 resolution = imageSize(depth_output);
+
+    if (id.x >= resolution.x || id.y >= resolution.y) {
+        return;
+    }
+
+	const int pixel_id = int(id.x) + int(id.y) * resolution.x;
+	const float depth_float = float(depth_input[pixel_id]) / 4294967295.0;
+
+	imageStore(depth_output, ivec2(id), vec4(depth_float));
+}

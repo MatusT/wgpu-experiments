@@ -1,14 +1,11 @@
 use crate::small_molecules_pipeline::*;
 
 use bytemuck::*;
-use nalgebra_glm::{scaling, vec4, zero, Mat4};
+use nalgebra_glm::{scaling, vec2, vec4, zero, Mat4};
 use std::collections::HashMap;
 use wgpu;
 use wgpu_experiments::camera::*;
-use wgpu_experiments::pipelines::{
-    boxes::BoxDepthPipeline,
-    sphere_billboards::{SphereBillboardInstancedDepthPipeline, SphereBillboardInstancedPipeline},
-};
+use wgpu_experiments::pipelines::depth_conversion::DepthConversionPipeline;
 use wgpu_experiments::rpdb;
 use wgpu_experiments::{ApplicationEvent, ApplicationSkeleton};
 
@@ -35,13 +32,19 @@ pub struct Application {
 
     pub depth_texture: wgpu::Texture,
     pub depth_texture_view: wgpu::TextureView,
+    pub atomic_depth_ssbo: wgpu::Buffer,
+    pub atomic_depth_texture: wgpu::Texture,
+    pub atomic_depth_texture_view: wgpu::TextureView,
 
     pub camera: RotationCamera,
     pub camera_buffer: wgpu::Buffer,
 
+    globals: wgpu::Buffer,
+
     // Spheres rendering
     pipeline: SmallMoleculesPipeline,
     pipeline_depth: SmallMoleculesPipeline,
+    depth_conversion_pipeline: DepthConversionPipeline,
 
     molecule_name_id: HashMap<String, usize>,
     molecules_pointers: Vec<MoleculePointer>,
@@ -94,6 +97,11 @@ impl Application {
             wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
         );
 
+        let globals = MoleculesGlobals {
+            resolution: vec2(width as f32, height as f32),
+        };
+        let globals = device.create_buffer_with_data(cast_slice(&[globals]), wgpu::BufferUsage::UNIFORM);
+
         let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
             label: None,
             size: wgpu::Extent3d { width, height, depth: 1 },
@@ -104,6 +112,21 @@ impl Application {
             usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
         });
         let depth_texture_view = depth_texture.create_default_view();
+
+        let atomic_depth_ssbo = device.create_buffer_with_data(
+            cast_slice(&vec![4294967295u32; (width * height) as usize]),
+            wgpu::BufferUsage::STORAGE | wgpu::BufferUsage::COPY_SRC,
+        );
+        let atomic_depth_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d { width, height, depth: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R32Float,
+            usage: wgpu::TextureUsage::STORAGE,
+        });
+        let atomic_depth_texture_view = atomic_depth_texture.create_default_view();
 
         // Open structure file
         let args: Vec<String> = std::env::args().collect();
@@ -151,7 +174,7 @@ impl Application {
                     lods_vertices,
                 });
 
-                if molecule.lods()[0].atoms().len() <= 64 {
+                if molecule.lods()[0].atoms().len() == 52 {
                     let mut positions = [vec4(0.0, 0.0, 0.0, 0.0); 64];
                     for (i, position) in molecule.lods()[0].atoms().iter().enumerate() {
                         positions[i] = *position;
@@ -181,6 +204,7 @@ impl Application {
 
         let pipeline = SmallMoleculesPipeline::new(&device, false);
         let pipeline_depth = SmallMoleculesPipeline::new(&device, true);
+        let depth_conversion_pipeline = DepthConversionPipeline::new(&device);
 
         let mut structure_model_matrices_buffer = Vec::new();
         for (i, structure_molecule) in structure_model_matrices.iter().enumerate() {
@@ -199,14 +223,22 @@ impl Application {
 
             device,
             queue,
+
             depth_texture,
             depth_texture_view,
+
+            atomic_depth_ssbo,
+            atomic_depth_texture,
+            atomic_depth_texture_view,
 
             camera,
             camera_buffer,
 
+            globals,
+
             pipeline,
             pipeline_depth,
+            depth_conversion_pipeline,
 
             molecule_name_id,
             molecules_pointers,
@@ -268,15 +300,19 @@ impl ApplicationSkeleton for Application {
                     self.pipeline_depth.create_bind_group(
                         &self.device,
                         &self.camera_buffer,
+                        &self.globals,
                         &molecule_ubo,
                         &self.structure_model_matrices_buffer[molecule_index],
+                        &self.atomic_depth_ssbo,
                     )
                 } else {
                     self.pipeline.create_bind_group(
                         &self.device,
                         &self.camera_buffer,
+                        &self.globals,
                         &molecule_ubo,
                         &self.structure_model_matrices_buffer[molecule_index],
+                        &self.atomic_depth_ssbo,
                     )
                 };
                 bind_groups.push(Some(bind_group));
@@ -284,6 +320,8 @@ impl ApplicationSkeleton for Application {
                 bind_groups.push(None);
             }
         }
+
+        let depth_bind_group = self.depth_conversion_pipeline.create_bind_group(&self.device, &self.atomic_depth_ssbo, &self.atomic_depth_texture_view);
 
         {
             let color_attachments = if self.depth_only {
@@ -320,11 +358,20 @@ impl ApplicationSkeleton for Application {
                 if let Some(ref molecule_ubo) = self.molecules_ubos[molecule_index] {
                     rpass.set_bind_group(0, bind_groups[molecule_index].as_ref().unwrap(), &[]);
                     let tasks_count = self.structure_model_matrices[molecule_index].len();
-                    let tasks_count = tasks_count - (tasks_count % 32);
-                    let tasks_count = tasks_count / 32;
+                    // let tasks_count = tasks_count - (tasks_count % 32);
+                    // let tasks_count = tasks_count / 32;
                     rpass.draw_mesh_tasks(tasks_count as u32);
                 }
             }
+        }
+
+        // Depth compute conversion
+        {
+            let mut cpass = encoder.begin_compute_pass();
+
+            cpass.set_pipeline(&self.depth_conversion_pipeline.pipeline);
+            cpass.set_bind_group(0, &depth_bind_group, &[]);
+            cpass.dispatch((self.width + 15) / 16, (self.height + 15) / 16, 1);
         }
 
         self.queue.submit(Some(encoder.finish()));

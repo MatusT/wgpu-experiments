@@ -1,5 +1,5 @@
 use bytemuck::{Pod, Zeroable};
-use nalgebra_glm::Vec4;
+use nalgebra_glm::{Vec2, Vec4};
 use wgpu::*;
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -11,6 +11,15 @@ pub struct MoleculeUbo {
 
 unsafe impl Zeroable for MoleculeUbo {}
 unsafe impl Pod for MoleculeUbo {}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct MoleculesGlobals {
+    pub resolution: Vec2,
+}
+
+unsafe impl Zeroable for MoleculesGlobals {}
+unsafe impl Pod for MoleculesGlobals {}
 pub struct SmallMoleculesPipeline {
     pub pipeline: MeshPipeline,
     pub bind_group_layout: BindGroupLayout,
@@ -41,19 +50,34 @@ impl SmallMoleculesPipeline {
                     visibility: ShaderStage::MESH,
                     ty: BindingType::UniformBuffer { dynamic: false },
                 },
-                // Molecule information
+                // Globals
                 BindGroupLayoutEntry {
                     binding: 1,
                     visibility: ShaderStage::MESH,
                     ty: BindingType::UniformBuffer { dynamic: false },
                 },
-                // AABB's model matrices
+                // Molecule information
                 BindGroupLayoutEntry {
                     binding: 2,
+                    visibility: ShaderStage::MESH,
+                    ty: BindingType::UniformBuffer { dynamic: false },
+                },
+                // AABB's model matrices
+                BindGroupLayoutEntry {
+                    binding: 3,
                     visibility: ShaderStage::MESH,
                     ty: BindingType::StorageBuffer {
                         dynamic: false,
                         readonly: true,
+                    },
+                },
+                // Depth buffer
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStage::MESH,
+                    ty: BindingType::StorageBuffer {
+                        dynamic: false,
+                        readonly: false,
                     },
                 },
             ],
@@ -118,8 +142,10 @@ impl SmallMoleculesPipeline {
         &self,
         device: &Device,
         camera: &Buffer,
+        globals: &Buffer,
         molecule: &Buffer,
-        model_matrices: &Buffer, /*aabbs_rotations: &Buffer*/
+        model_matrices: &Buffer,
+        depth: &Buffer,
     ) -> BindGroup {
         device.create_bind_group(&BindGroupDescriptor {
             label: None,
@@ -127,20 +153,24 @@ impl SmallMoleculesPipeline {
             bindings: &[
                 Binding {
                     binding: 0,
-                    resource: BindingResource::Buffer(camera.slice(0..0)),
+                    resource: BindingResource::Buffer(camera.slice(..)),
                 },
                 Binding {
                     binding: 1,
-                    resource: BindingResource::Buffer(molecule.slice(0..0)),
+                    resource: BindingResource::Buffer(globals.slice(..)),
                 },
                 Binding {
                     binding: 2,
-                    resource: BindingResource::Buffer(model_matrices.slice(0..0)),
+                    resource: BindingResource::Buffer(molecule.slice(..)),
                 },
-                // Binding {
-                //     binding: 3,
-                //     resource: BindingResource::Buffer(aabbs_rotations.slice(0..0)),
-                // },
+                Binding {
+                    binding: 3,
+                    resource: BindingResource::Buffer(model_matrices.slice(..)),
+                },
+                Binding {
+                    binding: 4,
+                    resource: BindingResource::Buffer(depth.slice(..)),
+                },
             ],
         })
     }
